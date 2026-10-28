@@ -1,0 +1,82 @@
+{
+ "source": "uav-hil-simulator-main\\uav-hil-simulator-main\\arduino_hil\\hil_protocol.py",
+ "packets": [
+  {
+   "type": 1,
+   "seq": 1,
+   "ts": "1700000000000000000",
+   "payload_hex": "cdcccc3dcdcc4cbec3f51c410ad7233c0ad7a3bc8fc2f53c",
+   "packet_hex": "4849010118000100000000002a36fe9c9717cdcccc3dcdcc4cbec3f51c410ad7233c0ad7a3bc8fc2f53ce3886c0d"
+  },
+  {
+   "type": 2,
+   "seq": 2,
+   "ts": "1700000000020000000",
+   "payload_hex": "b6f39d3f",
+   "packet_hex": "48490102040002000000002d5b37fe9c9717b6f39d3f64dca2a3"
+  },
+  {
+   "type": 3,
+   "seq": 3,
+   "ts": "1700000000040000000",
+   "payload_hex": "9c53c93620f0c037282930b8",
+   "packet_hex": "484901030c0003000000005a8c38fe9c97179c53c93620f0c037282930b8b30b0a63"
+  },
+  {
+   "type": 4,
+   "seq": 4,
+   "ts": "1700000000060000000",
+   "payload_hex": "89d2dee00bb32f4007ce1951da9f524000004841",
+   "packet_hex": "484901041400040000000087bd39fe9c971789d2dee00bb32f4007ce1951da9f5240000048411f684410"
+  },
+  {
+   "type": 16,
+   "seq": 5,
+   "ts": "123456789",
+   "payload_hex": "c3f5283f6666263f1f852b3f00000000",
+   "packet_hex": "4849011010000500000015cd5b0700000000c3f5283f6666263f1f852b3f00000000ef589540"
+  },
+  {
+   "type": 17,
+   "seq": 6,
+   "ts": "987654321",
+   "payload_hex": "00000000cdcc4c3e9a9999becdcccc3d",
+   "packet_hex": "48490111100006000000b168de3a0000000000000000cdcc4c3e9a9999becdcccc3dc194bd02"
+  },
+  {
+   "type": 32,
+   "seq": 7,
+   "ts": "1",
+   "payload_hex": "5541565f48494c5f5631",
+   "packet_hex": "484901200a000700000001000000000000005541565f48494c5f56314ad17655"
+  },
+  {
+   "type": 33,
+   "seq": 8,
+   "ts": "2",
+   "payload_hex": "5541565f48494c5f5631",
+   "packet_hex": "484901210a000800000002000000000000005541565f48494c5f56316684e1c6"
+  },
+  {
+   "type": 34,
+   "seq": 9,
+   "ts": "3",
+   "payload_hex": "",
+   "packet_hex": "484901220000090000000300000000000000e4d33a6b"
+  },
+  {
+   "type": 35,
+   "seq": 10,
+   "ts": "4",
+   "payload_hex": "",
+   "packet_hex": "4849012300000a0000000400000000000000e5d39aaf"
+  },
+  {
+   "type": 36,
+   "seq": 4294967295,
+   "ts": "18446744073709551615",
+   "payload_hex": "",
+   "packet_hex": "484901240000ffffffffffffffffffffffff8103aa9a"
+  }
+ ]
+}

@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AeroFC Simulator</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body data-mode="none">
+<header>
+  <div class="brand">AeroFC-R4 <span>simulator &amp; ground station</span></div>
+  <div id="modeLabel" class="mode">-</div>
+  <a class="help" href="#help">Controls</a>
+</header>
+
+<main>
+  <aside class="side">
+    <section class="card">
+      <h2>1. Flight controller</h2>
+      <button id="btnSoftware" class="primary">Fly the software FC</button>
+      <p class="hint">Runs the Arduino firmware inside the browser - no board needed.</p>
+      <button id="btnArduino" class="primary alt">Connect Arduino R4 (USB)</button>
+      <p class="hint">Upload the firmware first, then pick the board's COM port. The page acts as Gazebo + bridge.</p>
+      <details>
+        <summary>More connections</summary>
+        <button id="btnTelemetry">Telemetry only (USB-TTL on D1)</button>
+        <p class="hint">Event day: live plots while the organisers' bridge owns the USB port.</p>
+        <label class="row">Relay <input id="relayUrl" value="http://localhost:8770"></label>
+        <button id="btnGazebo">Gazebo in WSL (relay)</button>
+        <p class="hint">Pilot + plots for the official Gazebo simulator (see docs/08).</p>
+      </details>
+      <button id="btnStop" class="ghost">Stop</button>
+    </section>
+
+    <section class="card">
+      <h2>2. Commands</h2>
+      <div class="grid2">
+        <button id="cmdArm">Arm (Enter)</button>
+        <button id="cmdTakeoff">Take-off (T)</button>
+        <button id="cmdLand">Land (L)</button>
+        <button id="cmdManual">Manual thr (M)</button>
+        <button id="cmdKill" class="danger">KILL (Space)</button>
+        <button id="cmdStop" class="ghost">Send STOP</button>
+      </div>
+      <p class="hint">After START the flight controller takes off to 1.5 m by itself (setting "Auto TO").</p>
+    </section>
+
+    <section class="card">
+      <h2>3. Pilot</h2>
+      <div class="kv"><span>Input</span><b id="stPilot">keyboard</b></div>
+      <div class="kv mono"><b id="stSticks">-</b></div>
+      <label class="row">Protocol
+        <select id="pilotProto">
+          <option value="extended">AeroFC pilot (25 Hz, climb stick)</option>
+          <option value="stock">Like stock control_input.py</option>
+        </select>
+      </label>
+    </section>
+
+    <section class="card" id="envPanel">
+      <h2>4. Test conditions</h2>
+      <label class="slider">Wind (m/s) <output id="envWindVal">0</output><input id="envWind" type="range" min="0" max="6" step="0.5" value="0"></label>
+      <label class="slider">Gusts (m/s) <output id="envGustVal">0</output><input id="envGust" type="range" min="0" max="3" step="0.25" value="0"></label>
+      <label class="slider">Gyro noise (deg/s) <output id="envGyroNVal">0</output><input id="envGyroN" type="range" min="0" max="2" step="0.1" value="0"></label>
+      <label class="slider">Gyro bias (deg/s) <output id="envGyroBVal">0</output><input id="envGyroB" type="range" min="0" max="3" step="0.1" value="0"></label>
+      <label class="slider">Accel noise (m/s2) <output id="envAccNVal">0</output><input id="envAccN" type="range" min="0" max="1" step="0.05" value="0"></label>
+      <label class="slider">Baro noise (m) <output id="envBaroNVal">0</output><input id="envBaroN" type="range" min="0" max="0.5" step="0.02" value="0"></label>
+      <label class="slider">Compass noise (uT) <output id="envMagNVal">0</output><input id="envMagN" type="range" min="0" max="5" step="0.25" value="0"></label>
+      <label class="slider">Extra delay (ms) <output id="envLatVal">0</output><input id="envLat" type="range" min="0" max="60" step="5" value="0"></label>
+      <label class="slider">Sensor rate (Hz) <output id="envRateVal">50</output><input id="envRate" type="range" min="20" max="100" step="5" value="50"></label>
+      <label class="row">Speed <select id="simSpeed"><option value="0.5">0.5x</option><option value="1" selected>1x real time</option><option value="2">2x</option></select></label>
+    </section>
+  </aside>
+
+  <section class="center">
+    <div class="viewwrap">
+      <canvas id="view"></canvas>
+      <canvas id="horizon"></canvas>
+      <button id="camBtn" class="ghost small">Camera: chase</button>
+    </div>
+    <div class="plots">
+      <canvas id="plotRc"></canvas>
+      <canvas id="plotAtt"></canvas>
+      <canvas id="plotYaw"></canvas>
+      <canvas id="plotAlt"></canvas>
+      <canvas id="plotMot"></canvas>
+      <div class="plotctl"><button id="recBtn">Record log (CSV)</button><span class="hint">Solid = flight controller estimate, dashed = truth from the simulator.</span></div>
+    </div>
+  </section>
+
+  <aside class="side right">
+    <section class="card" id="oledCard" style="display:none">
+      <h2>Virtual OLED + buttons</h2>
+      <canvas id="oled" width="128" height="64"></canvas>
+      <div class="oledbtns">
+        <button id="oledUp">UP</button><button id="oledDown">DOWN</button>
+        <button id="oledSel">SELECT</button><button id="oledBack">BACK</button>
+      </div>
+      <p class="hint">Exactly the menu of the real board. Hold SELECT = arm/disarm, hold BACK = kill.</p>
+    </section>
+    <section class="card" id="realOledNote" style="display:none">
+      <h2>OLED</h2><p class="hint">The dashboard is on the OLED of your Arduino.</p>
+    </section>
+    <section class="card">
+      <h2>Flight controller status</h2>
+      <div class="kv"><span>State</span><b id="stState">-</b></div>
+      <div class="kv"><span>Mode</span><b id="stMode">-</b></div>
+      <div class="kv"><span>Last reason</span><b id="stReason">-</b></div>
+      <div class="kv"><span>Link</span><b id="stLink">-</b></div>
+      <div class="kv"><span>Loop</span><b id="stRates">-</b></div>
+      <div class="kv"><span>Estimator</span><b id="stEst">-</b></div>
+      <div class="kv"><span>Hover cmd</span><b id="stHover">-</b></div>
+      <div class="kv"><span>Bridge</span><b id="stBridge">-</b></div>
+    </section>
+    <section class="card grow">
+      <h2>Bridge log</h2>
+      <pre id="log"></pre>
+    </section>
+  </aside>
+</main>
+
+<section id="help" class="card helpcard">
+  <h2>Controls</h2>
+  <div class="cols">
+    <div>
+      <h3>Keyboard (hold keys)</h3>
+      <table>
+        <tr><td>W / S</td><td>forward / back</td></tr>
+        <tr><td>A / D</td><td>left / right</td></tr>
+        <tr><td>Q / E or Left / Right</td><td>turn left / right</td></tr>
+        <tr><td>R / F or Up / Down</td><td>climb / descend</td></tr>
+        <tr><td>Enter</td><td>arm / disarm</td></tr>
+        <tr><td>T / L</td><td>take-off / land</td></tr>
+        <tr><td>M</td><td>manual throttle on/off</td></tr>
+        <tr><td>Space</td><td>KILL motors</td></tr>
+      </table>
+    </div>
+    <div>
+      <h3>Gamepad (Xbox / PlayStation)</h3>
+      <table>
+        <tr><td>Left stick up/down</td><td>climb / descend</td></tr>
+        <tr><td>Left stick left/right</td><td>turn</td></tr>
+        <tr><td>Right stick</td><td>forward / back / left / right</td></tr>
+        <tr><td>A (X)</td><td>take-off</td></tr>
+        <tr><td>B (O)</td><td>land</td></tr>
+        <tr><td>Start (Options)</td><td>arm / disarm</td></tr>
+        <tr><td>Y (triangle)</td><td>manual throttle on/off</td></tr>
+        <tr><td>hold Back (Share)</td><td>KILL</td></tr>
+      </table>
+    </div>
+    <div>
+      <h3>Good to know</h3>
+      <p>The drone holds its height and heading when you let go. It has almost no air drag, so it keeps drifting:
+        steer the other way to stop it, like a DJI drone in ATTI mode.</p>
+      <p>Press a key once on the page if the keyboard seems dead (the page needs focus).
+        Gamepads appear after you press a button on them.</p>
+      <p><a href="tests.html">Run the automated flight tests</a></p>
+    </div>
+  </div>
+</section>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

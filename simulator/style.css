@@ -1,0 +1,74 @@
+:root {
+  --bg: #f4f6f8; --card: #ffffff; --fg: #111827; --muted: #6b7280; --line: #e5e7eb;
+  --accent: #2563eb; --accent2: #0f766e; --danger: #dc2626; --ok: #16a34a;
+  --sky: #cfe3f7; --ground: #dfe7d8; --grid: #b9c7b0;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1117; --card: #161b22; --fg: #e6edf3; --muted: #8b949e; --line: #30363d;
+    --accent: #3b82f6; --accent2: #14b8a6; --danger: #f85149; --ok: #3fb950;
+    --sky: #1d2b3a; --ground: #1f2a1d; --grid: #34452f;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { display: flex; align-items: center; gap: 16px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--card); }
+.brand { font-weight: 700; font-size: 17px; }
+.brand span { font-weight: 400; color: var(--muted); font-size: 14px; }
+.mode { color: var(--accent2); font-weight: 600; flex: 1; }
+.help { color: var(--accent); }
+main { display: grid; grid-template-columns: 270px minmax(0, 1fr) 300px; gap: 12px; padding: 12px; align-items: start; }
+.side { display: flex; flex-direction: column; gap: 12px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+.card h2 { font-size: 14px; margin: 0 0 8px; }
+.card h3 { font-size: 13px; margin: 6px 0; }
+button { font: inherit; border: 1px solid var(--line); background: var(--bg); color: var(--fg); border-radius: 7px; padding: 7px 10px; cursor: pointer; width: 100%; }
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
+button.primary.alt { background: var(--accent2); border-color: var(--accent2); }
+button.danger { background: var(--danger); color: #fff; border-color: var(--danger); font-weight: 600; }
+button.ghost { background: transparent; }
+button.small { width: auto; padding: 4px 8px; font-size: 12px; }
+button.rec { background: var(--danger); color: #fff; }
+.hint { color: var(--muted); font-size: 12px; margin: 4px 0 10px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.kv { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; font-size: 13px; }
+.kv span { color: var(--muted); }
+.kv b { font-weight: 600; text-align: right; overflow-wrap: anywhere; }
+.kv b.armed { color: var(--danger); }
+.mono b, .mono { font-family: ui-monospace, Consolas, monospace; font-size: 12px; font-weight: 400; }
+label.row { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: 13px; }
+label.row input, label.row select { flex: 1; min-width: 0; font: inherit; padding: 4px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; }
+label.slider { display: block; font-size: 12px; color: var(--muted); margin: 4px 0; }
+label.slider output { float: right; color: var(--fg); font-family: ui-monospace, monospace; }
+label.slider input { width: 100%; }
+details summary { cursor: pointer; color: var(--accent); margin: 6px 0; font-size: 13px; }
+.center { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.viewwrap { position: relative; height: 52vh; min-height: 300px; border-radius: 10px; overflow: hidden; border: 1px solid var(--line); }
+#view { width: 100%; height: 100%; display: block; }
+#horizon { position: absolute; right: 10px; bottom: 10px; width: 170px; height: 120px; border-radius: 8px; border: 2px solid rgba(0,0,0,0.4); }
+#camBtn { position: absolute; right: 10px; top: 10px; background: var(--card); }
+.plots { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.plots canvas { width: 100%; height: 150px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; }
+.plotctl { display: flex; align-items: center; gap: 10px; }
+.plotctl button { width: auto; }
+#oled { width: 100%; image-rendering: pixelated; border-radius: 6px; border: 6px solid #1f2937; background: #000; }
+.oledbtns { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 8px; }
+.oledbtns button { padding: 8px 2px; font-size: 12px; font-weight: 600; touch-action: none; }
+pre#log { margin: 0; height: 190px; overflow: auto; font: 11px/1.35 ui-monospace, Consolas, monospace; white-space: pre-wrap; color: var(--muted); }
+.helpcard { margin: 0 12px 16px; }
+.helpcard .cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.helpcard table { border-collapse: collapse; font-size: 13px; }
+.helpcard td { padding: 2px 10px 2px 0; }
+.helpcard td:first-child { font-family: ui-monospace, monospace; color: var(--accent); white-space: nowrap; }
+a { color: var(--accent); }
+@media (max-width: 1100px) {
+  main { grid-template-columns: 1fr; }
+  .plots { grid-template-columns: 1fr; }
+  .helpcard .cols { grid-template-columns: 1fr; }
+  .viewwrap { height: 45vh; }
+}
+@media (max-width: 480px) {
+  main { padding: 8px; }
+  header { flex-wrap: wrap; }
+}
