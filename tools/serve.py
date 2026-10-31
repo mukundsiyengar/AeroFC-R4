@@ -1,7 +1,7 @@
 """serve.py - the simulator's local web server (like `python -m http.server`, but the browser never keeps old copies:
 after you rebuild the firmware or update the files, a page reload always gets the new ones).
 
-    python tools/serve.py [port] [url]    (START_SIMULATOR.bat does this; default port 8766; url = page to open)
+    python tools/serve.py [port] [url]    (START_SIMULATOR.bat does this; default port 8767; url = page to open)
 """
 import functools
 import http.server
@@ -31,7 +31,7 @@ def open_page(url):
 
 
 def main():
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8766
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8767
     url = sys.argv[2] if len(sys.argv) > 2 else ""
     root = pathlib.Path(__file__).resolve().parent.parent
     handler = functools.partial(NoCacheHandler, directory=str(root))

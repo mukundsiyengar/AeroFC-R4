@@ -4,7 +4,7 @@
 
 static const int ROWS = 6;                 // list rows under the title bar (8 px each); the bottom line is the help ticker
 static const int COLS = 21;                // characters per line
-static const int HOME_PAGES = 8;
+static const int HOME_PAGES = 9;
 static const int MENU_FIXED = 4;           // Flight, Calibrate, Storage, Help, then the parameter groups, then About
 static const int MENU_COUNT = MENU_FIXED + PG_COUNT + 1;
 
@@ -63,10 +63,16 @@ static const TextItem kTopics[] = {
                    "down is changing. The bars differ when the drone tilts or turns." },
   { "Page RC INPUT", "The pilot sticks received from the PC, the mode and the packet rate. LINK LOST = no pilot "
                      "packets." },
+  { "Page PLOTS", "Live graphs of the last 12 s, on the board itself. RP: roll stick, pitch stick dotted. YT: yaw "
+                  "stick, throttle stick dotted. AT: roll, pitch dotted, top and bottom = 40 deg. AL: height, scaled to "
+                  "fit, with the height now in m." },
   { "Page SENSORS", "Raw accelerometer, gyro, compass and barometer, the gyro bias the EKF learned, and the GPS "
                     "position from home." },
   { "Page SYSTEM", "Sensor and control rates, time of one control step, CRC errors, packets, uptime, last reset "
                    "cause, OLED I2C errors and whether the watchdog runs." },
+  { "Bridge too slow", "The bridge sends fewer than 9 sensor packets a second, so the drone can't be flown and won't "
+                       "take off. The bridge is in its slow mode: it says Subprocess Fallback. Fix on that PC: sudo apt "
+                       "install gz-harmonic" },
   { "Speed modes", "ECO: 2 m/s, 15 deg, gentle. NORMAL: 5 m/s, 25 deg. SPORT: 10 m/s, 35 deg and faster climb. "
                    "Change in Flight menu, keys 1/2/3 or the X button in the simulator." },
   { "Position hold", "Uses GPS and compass. Let go of the sticks: the drone brakes, then holds its spot and fights "
@@ -197,6 +203,13 @@ void UiMenu::init(FcApp *a, const UiPlatform *p) {
   screen = SC_HOME;
   homePage = 0;
   memset(altHist, 0, sizeof(altHist));
+  memset(plotRoll, 0, sizeof(plotRoll));
+  memset(plotPitch, 0, sizeof(plotPitch));
+  memset(plotYaw, 0, sizeof(plotYaw));
+  memset(plotThr, 0, sizeof(plotThr));
+  memset(plotAttR, 0, sizeof(plotAttR));
+  memset(plotAttP, 0, sizeof(plotAttP));
+  memset(plotAlt, 0, sizeof(plotAlt));
   toastMsg[0] = 0;
   dirty = true;
 }
@@ -531,7 +544,7 @@ void UiMenu::drawHome(Gfx &g) {
   const Params &p = app->params;
   char b[24];
   static const char *const titles[HOME_PAGES] = { "STATUS", "ATTITUDE", "ALTITUDE", "POSITION", "MOTORS",
-                                                  "RC INPUT", "SENSORS", "SYSTEM" };
+                                                  "RC INPUT", "SENSORS", "SYSTEM", "PLOTS" };
   drawTitle(g, titles[homePage], homePage, HOME_PAGES);
   const float roll = c.ekf.roll() * FC_RAD2DEG, pitch = c.ekf.pitch() * FC_RAD2DEG;
   float yaw = c.ekf.yaw() * FC_RAD2DEG;
@@ -540,6 +553,7 @@ void UiMenu::drawHome(Gfx &g) {
   const int altDec = fcAbs(hAgl) >= 100.0f ? 0 : 2;
 
   switch (homePage) {
+    case 8: drawPlots(g); break;
     case 0: {
       g.text(0, 9, sessionName(*app, now));
       g.text(GFX_W - 18, 9, speedShort(p));
@@ -559,6 +573,7 @@ void UiMenu::drawHome(Gfx &g) {
       strcat(b, reasonName(c.reason));
       if (c.crashed) strcpy(b, "!! CRASH detected !!");
       else if (c.pilot.linkLost) strcpy(b, "!! RC LINK LOST !!");
+      else if (c.linkTooSlowShown()) strcpy(b, "!! BRIDGE TOO SLOW !!");
       g.text(0, 55, b);
       break;
     }
@@ -717,6 +732,62 @@ void UiMenu::drawCal(Gfx &g) {
   }
 }
 
+// ------------------------------------------------------------------ live plots
+static int8_t toI8(float v) { return (int8_t)fcClamp(v, -127.0f, 127.0f); }
+
+void UiMenu::samplePlots() {
+  const FlightCore &c = app->core;
+  const PilotState &ps = c.pilot;
+  // a command code is not a stick position: the throttle trace shows the stick or the manual throttle (0.66 = centre)
+  const float thr = ps.manual ? fcClamp((ps.manualCmd - 0.66f) * 3.0f, -1.0f, 1.0f) : ps.climb;
+  plotRoll[plotIdx] = toI8(ps.roll * 100.0f);
+  plotPitch[plotIdx] = toI8(ps.pitch * 100.0f);
+  plotYaw[plotIdx] = toI8(ps.yaw * 100.0f);
+  plotThr[plotIdx] = toI8(thr * 100.0f);
+  plotAttR[plotIdx] = toI8(c.ekf.roll() * FC_RAD2DEG * 3.0f);
+  plotAttP[plotIdx] = toI8(c.ekf.pitch() * FC_RAD2DEG * 3.0f);
+  plotAlt[plotIdx] = (int16_t)fcClamp(c.altf.alt * 100.0f, -32000.0f, 32000.0f);
+  plotIdx = (uint8_t)((plotIdx + 1) % PLOT_N);
+}
+
+// one band: a line for the first trace, dots on every other column for the second, oldest sample on the left
+static void plotBand(Gfx &g, int y0, int h, int8_t fullScale, const int8_t *a, const int8_t *b, int idx, int n, const char *label) {
+  const int x0 = 12, mid = y0 + h / 2;
+  g.text(0, y0 + (h - 7) / 2, label);
+  for (int x = 0; x < n; x += 4) g.pixel(x0 + x, mid);
+  const auto Y = [&](int v) {
+    const int y = mid - v * (h / 2) / fullScale;
+    return y < y0 ? y0 : (y > y0 + h - 1 ? y0 + h - 1 : y);
+  };
+  for (int i = 0; i + 1 < n; i++) {
+    g.line(x0 + i, Y(a[(idx + i) % n]), x0 + i + 1, Y(a[(idx + i + 1) % n]));
+    if (!(i & 1)) g.pixel(x0 + i, Y(b[(idx + i) % n]));
+  }
+}
+
+void UiMenu::drawPlots(Gfx &g) {
+  plotBand(g, 9, 12, 100, plotRoll, plotPitch, plotIdx, PLOT_N, "RP");
+  plotBand(g, 22, 12, 100, plotYaw, plotThr, plotIdx, PLOT_N, "YT");
+  plotBand(g, 35, 12, 120, plotAttR, plotAttP, plotIdx, PLOT_N, "AT");
+  // height: scaled to what is in the window, at least 1 m top to bottom
+  const int x0 = 12, y0 = 48, h = 16;
+  int lo = plotAlt[0], hi = plotAlt[0];
+  for (int i = 1; i < PLOT_N; i++) {
+    if (plotAlt[i] < lo) lo = plotAlt[i];
+    if (plotAlt[i] > hi) hi = plotAlt[i];
+  }
+  if (hi - lo < 100) hi = lo + 100;
+  g.text(0, y0 + 4, "AL");
+  int last = 0;
+  for (int i = 0; i < PLOT_N; i++) {
+    const int v = plotAlt[(plotIdx + i) % PLOT_N];
+    const int y = y0 + h - 1 - (v - lo) * (h - 1) / (hi - lo);
+    if (i) g.line(x0 + i - 1, last, x0 + i, y);
+    last = y;
+  }
+  kv(g, 80, y0, "", app->core.altf.alt, 1, "m");
+}
+
 void UiMenu::drawAbout(Gfx &g) {
   drawTitle(g, "ABOUT", 0, 1);
   g.text(0, 10, FW_VERSION);
@@ -735,8 +806,13 @@ bool UiMenu::render(uint8_t *fb, uint32_t nowUs) {
     altHist[histIdx] = (int8_t)fcClamp(a, 0.0f, 26.0f);
     histIdx = (uint8_t)((histIdx + 1) & 63);
   }
-  // lists redraw 8x per second (the help ticker moves), the dashboard 5x
-  const uint32_t period = (screen == SC_HOME || screen == SC_HELPTEXT) ? 200000u : 125000u;
+  if ((uint32_t)(nowUs - lastPlotUs) >= 100000u) {      // history for the PLOTS page (10 Hz)
+    lastPlotUs = nowUs;
+    samplePlots();
+  }
+  // lists redraw 8x per second (the help ticker moves), the dashboard 5x, the plots 10x
+  const uint32_t period = screen == SC_HOME && homePage == HOME_PAGES - 1 ? 100000u
+                        : (screen == SC_HOME || screen == SC_HELPTEXT) ? 200000u : 125000u;
   if (!dirty && (uint32_t)(nowUs - lastRenderUs) < period) return false;
   dirty = false;
   lastRenderUs = nowUs;

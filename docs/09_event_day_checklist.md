@@ -3,7 +3,7 @@
 ## Night before
 
 - [ ] `tools\check_firmware.bat` → COMPILE OK. Upload the final firmware.
-- [ ] `tools\run_tests_headless.bat` → ALL PASS 35/35. Screenshot `simulator/tests.html` for your presentation.
+- [ ] `tools\run_tests_headless.bat` → ALL PASS 38/38. Screenshot `simulator/tests.html` for your presentation.
 - [ ] Fly the board in the Windows simulator: take-off, roll/pitch/yaw, climb, let go (position hold), RC link test, land. Record a CSV log ("Record log").
 - [ ] Fly once in the real Gazebo: `gazebo\4_FLY_SOFTWARE_FC_in_Gazebo.bat` (no board), then with the board (launchers 2 and 3). See docs/08.
 - [ ] **MENU → Storage → Save settings**, and check "Boot: saved" after a power cycle.
@@ -12,22 +12,24 @@
 
 ## At the organisers' PC
 
-0. **Close our simulator page** if it is open and connected to the same bridge: it would be a second pilot.
+**Hand over [the sheet in docs/12](12_hand_over_sheet.md) with the board.** Nothing of ours runs on their laptop.
+
 1. **Plug the Arduino in first**, then they start Gazebo and the bridge (`hil_bridge_v1.py --port /dev/ttyACM0`). The bridge says HELLO only once at start-up.
 2. OLED: **PC: HANDSHAKE**, then **RUNNING**. The bridge prints `HELLO_ACK received … HIL session started`.
 3. The drone **takes off to 1.5 m by itself** and hovers (altitude-hold take-off, as the problem statement asks).
 4. Manoeuvres with their joystick or `control_input.py`:
    - roll right, pitch forward/back, yaw both ways
    - the drone holds height and heading when the sticks are centred
-   - **If forward/back is reversed** with their tool: **MENU → Input → Inv pitch → ON** (and roll/yaw likewise). No upload needed.
+   - `w` goes forward in their keyboard tool, and `--pitch -0.2` also goes forward. If they want it the other way: **MENU → Input → Inv pitch → ON** (and roll/yaw likewise). No upload needed.
 5. Let go of the sticks: it brakes and **holds its position** (POSITION page: HOLDING, distance in cm).
-6. Show the OLED pages: ATTITUDE, ALTITUDE, POSITION, MOTORS, RC INPUT, SYSTEM (sensor rate, µs per step, CRC errors 0). Hold BACK on a menu line to show the built-in help.
-7. Land: there is no "land" key in their tool. Use **MENU → Flight → Land** on the board, or hold SELECT on the dashboard (it lands if flying).
+6. Show the OLED pages: **PLOTS** (UP once from the first page: live RC input, attitude and altitude), ATTITUDE, ALTITUDE, POSITION, MOTORS, RC INPUT, SYSTEM (sensor rate, µs per step, CRC errors 0). Hold BACK on a menu line to show the built-in help.
+7. Land, any of these: hold SELECT on the dashboard; **MENU → Flight → Land**; `j` twice in their tool; or `python3 control_input.py --throttle 13 --duration 0.2`. Fly again with `SPACE` then `u`, or `--throttle 12`.
 
 ## Live plots on event day ("real-time plotting of RC inputs, attitude, altitude")
 
 | Option | What you need |
 |---|---|
+| **The OLED's PLOTS page (use this one)** | Nothing else. It runs on the R4. |
 | A. Our simulator page as plotter | **USB-TTL adapter**: R4 **D1 → adapter RX**, GND → GND. In the page: More connections → **Telemetry only** → pick the adapter's port. Works with the organisers' unmodified bridge. |
 | B. Their PC runs our `bridge_plus.py` | If they allow it: the same as their bridge plus live plots in the browser (docs/08). |
 | C. No adapter | The OLED shows live attitude, altitude, RC input and motors. Their bridge also writes a CSV (`~/hil_test/logs/hil_flight_*.csv`) with altitude and motors. |

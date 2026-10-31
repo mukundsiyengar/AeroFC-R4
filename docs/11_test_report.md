@@ -1,6 +1,59 @@
-# 11. Test report (v2, final firmware)
+# 11. Test report (v3)
 
 Everything below flies the **unchanged flight code** in `firmware/AeroFC_R4_v2/src/core`. There are three levels, from fastest to most real.
+
+## 0. With only the organisers' files (v3)
+
+**How it runs:** your **real R4 with the v3 firmware**, and their `uav-hil-simulator-main.zip` freshly unpacked with none of our tools, using the commands in their README and manual. Their files are not edited. Truth comes from Gazebo's own odometry topic, and keys go through their real `control_input.py --interactive`, with Gazebo's window open. On this PC the board reaches Ubuntu through usbipd.
+
+| Their command | Result on the real R4 |
+|---|---|
+| Bridge starts | Handshake, `Gazebo Transport: Native (High Perf)`, 42 motor updates a second |
+| Take-off by itself | About 5 s after the bridge starts; hovers at 1.5 m, within 0.01 m sideways |
+| `w` 3 times, 3 s | 3.64 m forward |
+| `s` 3 times, 3 s | 3.79 m back |
+| `a` / `d` 3 times, 3 s | 3.52 m left / 3.59 m right |
+| `q` / `e` 3 times, 3 s | turns 71° left / 70° right, no height change |
+| `u` 4 times, 2.5 s, then `SPACE` | climbs 8.1 m, then holds height |
+| `j` 3 times, 2 s, then `SPACE` | descends 7.6 m, then holds height |
+| `--roll 0.2 --duration 2.0` | 1.08 m right |
+| `--pitch -0.2 --duration 2.0` | 0.94 m forward |
+| `--yaw 0.3 --duration 2.0` | turns 41° right |
+| `--throttle 0.70 --duration 2.0` | climbs 1.94 m |
+| `--throttle 13 --duration 0.2` | lands in 10.4 s, moved 0.01 m, motors 0 |
+| `--throttle 12 --duration 0.2` | back above 1.2 m in 1.4 s |
+| `j` twice from 1.5 m | touches at about 1.5 m/s, level, motors stop 3.2 s later |
+| `SPACE`, then `u` | takes off again, holds at 1.5 m |
+
+Largest tilt in the whole flight: 11.4°.
+
+**Restarts and wrong order, on the real R4:**
+
+| What the operator does | Result |
+|---|---|
+| Ctrl+C on the bridge in flight | Their bridge stops the motors, so the drone falls to the ground |
+| Start the bridge again, R4 still plugged in | Flies again 5.5 s later |
+| Stop the bridge and restart it within 1 s | Stays in the air: rises briefly to 2.5 m, then back to 1.5 m |
+| Stop Gazebo and the bridge, start both again | Flies again 4.9 s later |
+| USB disconnected in flight (usbipd detach) | Their bridge stops with an error (`termios.error`), motors stop |
+| Start the bridge again after that | Flies again 5.1 s later |
+| Bridge started 25 s before Gazebo | Takes off 2.1 s after Gazebo comes up |
+
+A physical unplug and replug wasn't tried: the board stayed powered during the USB test. The firmware's cold start was tested only by the restart after each upload.
+
+**10-minute flight on the real R4 with their keyboard tool:** 233 random key presses, with the Gazebo window open. Largest tilt 18.7°. After `SPACE`, it held its spot within 0.02 m and its height within 0.001 m for 20 s.
+
+**The same R4 through our test tool** (`bridge_plus` + `sitl_check.py`, no Gazebo window): 8 of 8 checks. Hover within 0.00 m; forward 2.99 m/s; let go and it brakes in 1.4 s, stops 2.3 m later and holds within 0.10 m; RC link cut, failsafe after 2.1 s and landing 0.00 m from the spot.
+
+**Their bridge's slow mode** (no Gazebo Python bindings; forced without editing their file):
+- Motors update about once a second. What the board sees is about 1 sensor burst a second, with short runs of 8–16.
+- **Their own fake Arduino flew away to over 1000 m.** Our firmware did too, before this version.
+- v3 on the real R4 stays disarmed, with the drone on the ground, for the whole 45 s run.
+- A standard `gz-harmonic` install includes the bindings, so their laptop should use fast mode.
+
+**Software flight controller:** the same flight with v3 built for Linux gave matching results, for example `w` 3.32 m forward and motors stopping 3.3 s after a `j` landing.
+
+Sections A0–A3 below were measured on the real R4 with the last v2 firmware, whose flight code v3 keeps; v3 adds only the items in the README.
 
 ## A. Real UNO R4 Minima (your board)
 
@@ -97,7 +150,7 @@ Throughout: control step at most 946 µs, **0 CRC errors**, control delay at mos
 - **height limit 20 m with full climb stick: highest 20.05 m**
 - RC loss from 19.9 m: failsafe after 2.0 s, lands in 36.9 s, 0.00 m from the spot
 
-## C. Browser replica: 35 / 35 scenarios
+## C. Browser replica: 38 / 38 scenarios
 
 **How it runs:** the flight code is compiled to WebAssembly and flies a replica of the Gazebo `betaflight_x3`, with Gazebo's real magnetometer field, behind a replica of `hil_bridge_v1.py`. Faster than real time. Run it with `tools\run_tests_headless.bat` or open `simulator/tests.html`.
 
@@ -137,6 +190,9 @@ Throughout: control step at most 946 µs, **0 CRC errors**, control delay at mos
 | 32 | OLED help + motor readings | 106 help texts fit the display; OLED motor % = simulator's |
 | 33 | **Landing with the stick** | ECO, NORMAL and SPORT from 1.5 m, SPORT from 20 m, half stick, wind 3 m/s, position hold off: touches at 0.19–0.25 m/s, 0.17 m sideways at most (wind), bounce 0.03 m, lowest motor 60 %, motors stop; stick released at 0.6 m: keeps flying |
 | 34 | **Left stick with a wobbling thumb** | heading 0.0°, 0.00 m sideways; a real diagonal still does both |
+| 36 | **Organisers' keyboard tool** | `w` steps: 7.1° nose down, forward; `--pitch -0.2`: nose down too; `--pitch 0.2`: nose up; smooth joystick values and our page follow the protocol |
+| 37 | **Landing and taking off with only their tool** | `j` to the ground: motors stop, reason landed; `u` flies again; after KILL, throttle does not restart |
+| 38 | **A bridge too slow to fly on** | one burst every 1 s or 1.6 s: never arms, height 0 m after 70 s; 25 bursts a second flies; PLOTS page draws all 4 graphs |
 | 35 | **Page says if commands reach the flight controller** | every banner message; launchers open Gazebo mode; `127.0.0.1`; throttle card from real telemetry; command count goes to 0 when commands stop |
 
 **Scenario 28, control delay:** the drone is steady up to about 80 ms of delay. At 100 ms it wobbles (42° of tilt), and above that it crashes. The page therefore never lets the physics run more than 70 ms ahead of the board:
@@ -164,7 +220,7 @@ With position hold OFF nothing brings the drone back, so it still travels while 
 
 ## D. Firmware build
 
-`tools\check_firmware.bat`: compiles for the UNO R4 Minima with **0 warnings** in our code, about 112.3 KB flash (42 %) and 15 KB RAM (46 %).
+`tools\check_firmware.bat`: compiles for the UNO R4 Minima with **0 warnings** in our code, about 114.4 KB flash (43 %) and 16 KB RAM (48 %).
 
 ## Not tested by me (needs you)
 
@@ -172,4 +228,5 @@ With position hold OFF nothing brings the drone back, so it still travels while 
 - **Your real gamepad.** Tested with a fake gamepad. If a stick rests beyond 0.25, card 3 shows a red warning.
 - **The page's "Connect Arduino R4" button.** Web Serial needs your click in the browser's port chooser, so I used a test relay with the same page code path. Please try it once.
 - **`gazebo\2_ARDUINO_to_Ubuntu.bat`'s permission step.** The board was already shared, so I ran only its attach command. Launcher 3 is tested (A0).
-- **The banner and keys in your real Edge window,** in split screen. I flew from the app's browser pane with the same page. Check that the banner turns green, and click the page once.
+- **The banner and keys in your real Edge window,** in split screen. I flew from the app's browser pane with the same page. It's only for practice now, because the event doesn't use our page.
+- **A physical unplug and replug,** and the organisers' actual laptop (there the board connects directly, without usbipd).

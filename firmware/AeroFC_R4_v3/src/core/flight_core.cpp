@@ -15,8 +15,8 @@ const char *reasonName(uint8_t r) {
 }
 const char *armResultName(int8_t a) {
   static const char *const n[] = { "OK", "already", "no sensors", "EKF not ready", "not level", "calibrating",
-                                   "too soon" };
-  return (a >= 0 && a < 7) ? n[a] : "?";
+                                   "too soon", "bridge too slow" };
+  return (a >= 0 && a < 8) ? n[a] : "?";
 }
 
 void FlightCore::init(Params *p, CalData *c) {
@@ -272,6 +272,18 @@ void FlightCore::onControlInput(float thr, float r, float pt, float y, uint32_t 
 
   // shape the sticks
   float sticks[3] = { fcClamp(r, -1.0f, 1.0f), fcClamp(pt, -1.0f, 1.0f), fcClamp(y, -1.0f, 1.0f) };
+  // The organisers' keyboard tool labels W "forward" but sends +pitch, which their own protocol calls backward. Nothing
+  // else moves pitch in steps of exactly 0.1, so those steps are flipped: W goes forward, and a command such as
+  // --pitch -0.2 or a joystick still follows the protocol. Our page's stream never gets here.
+  if ((thr >= 1.5f && thr <= 3.5f) || (thr >= 9.5f && thr < 29.5f)) {
+    pilot.keyTool = false;
+  } else {
+    const float step = fcAbs(pt - pilot.lastStockPitch);
+    if (fcAbs(step - 0.1f) < 0.002f) pilot.keyTool = true;
+    else if (step > 0.002f && fcAbs(pt) > 0.002f) pilot.keyTool = false;
+  }
+  pilot.lastStockPitch = pt;
+  if (pilot.keyTool) sticks[1] = -sticks[1];
   if (prm->invRoll > 0.5f) sticks[0] = -sticks[0];
   if (prm->invPitch > 0.5f) sticks[1] = -sticks[1];
   if (prm->invYaw > 0.5f) sticks[2] = -sticks[2];
@@ -295,10 +307,13 @@ void FlightCore::onControlInput(float thr, float r, float pt, float y, uint32_t 
       pilot.manual = true;
       pilot.manualCmd = thr;
       pilot.climb = 0.0f;
+      // after a landing, more throttle (key u in the organisers' tool) takes off again: that tool has no other way
+      if (thr > pilot.lastStockThr + 0.001f && state == ST_DISARMED && reason == R_LANDED) lastArmResult = cmdTakeoff(nowUs);
     } else {                                          // 0 = altitude hold (stock semantics)
       pilot.manual = false;
       pilot.climb = 0.0f;
     }
+    pilot.lastStockThr = thr;
   }
 
   // pilot-link monitoring only for a continuous stream of OUR packets (the stock tool sends only on key presses)
@@ -357,6 +372,7 @@ int8_t FlightCore::cmdArm(uint32_t nowUs) {
   if (armed()) return ARM_ALREADY;
   if (sens.calibrating()) return ARM_CALIBRATING;
   if (!sensorsOk || !haveImu_ || (uint32_t)(nowUs - lastImuUs_) > SENSOR_STALE_US) return ARM_NO_SENSORS;
+  if (linkTooSlow()) return ARM_LINK_SLOW;
   if (!ekf.initialized() || !ekf.healthy()) return ARM_EST_NOT_READY;
   if (tiltDeg > ARM_MAX_TILT_DEG) return ARM_NOT_LEVEL;
   if ((uint32_t)(nowUs - disarmUs_) < 500000u && disarmUs_ != 0) return ARM_TOO_SOON;
@@ -442,6 +458,11 @@ void FlightCore::tick(uint32_t nowUs) {
     ctrlHz = (float)ctrlCount_ / s;
     imuCount_ = ctrlCount_ = 0;
     rateWinUs_ = nowUs;
+    const bool enough = imuHz >= 9.0f;
+    goodWindows_ = enough ? (uint8_t)fcMin((float)goodWindows_ + 1.0f, 255.0f) : 0;
+    // a slow link has windows with no packet at all, so zero counts as slow too, until the data has really stopped
+    if (enough || !haveImu_ || (uint32_t)(nowUs - lastImuUs_) > 3000000u) slowWindows_ = 0;
+    else if (slowWindows_ < 255) slowWindows_++;
   }
   const uint32_t sinceImu = haveImu_ ? (uint32_t)(nowUs - lastImuUs_) : 0xFFFFFFFFu;
   if (sinceImu > SENSOR_STALE_US) sensorsOk = false;
@@ -716,6 +737,12 @@ void FlightCore::flightLogic(float dt, uint32_t nowUs) {
         manualThrust = true;
         if (alt > ceilingAbs) { enterFlying(MODE_ALT_HOLD); geofence = true; manualThrust = false; altTarget = ceilingAbs; }
       }
+      // stick held down, or manual throttle below hover, and sitting on the ground: the same touch-down test as a
+      // landing, then the motors stop
+      const bool low = alt - groundAlt < 0.3f;
+      if ((manualThrust || pilot.climb < -0.3f) && low && fcAbs(vz) < 0.2f && altc.thrust < 0.95f * hoverT) landTimer_ += dt;
+      else landTimer_ = 0.0f;
+      if (landTimer_ > 0.8f) { cmdDisarm(R_LANDED); return; }
       if (!manualThrust) {
         const float c = pilot.climb;
         // going down by stick: the ground comes up gently whatever the stick says (0.6 m/s per metre of height, down
@@ -723,11 +750,6 @@ void FlightCore::flightLogic(float dt, uint32_t nowUs) {
         const float wantDown = c < 0.0f ? fcMin(-c * prof.descent, fcMax(p.landSpeedLow, 0.6f * (alt - groundAlt))) : 0.0f;
         descentSp_ = wantDown > descentSp_ ? fcMin(wantDown, descentSp_ + 1.5f * dt) : wantDown;
         const float stickVz = c > 0.0f ? c * prof.climb : -descentSp_;
-        // stick held down and sitting on the ground: the same touch-down test as a landing, then the motors stop
-        const bool low = alt - groundAlt < 0.3f;
-        if (c < -0.3f && low && fcAbs(vz) < 0.2f && altc.thrust < 0.95f * hoverT) landTimer_ += dt;
-        else landTimer_ = 0.0f;
-        if (landTimer_ > 0.8f) { cmdDisarm(R_LANDED); return; }
         if (p.altHoldOn < 0.5f) {
           useAlt = false;
           vzFeed = stickVz;

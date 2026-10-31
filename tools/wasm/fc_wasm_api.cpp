@@ -1,8 +1,8 @@
-// fc_wasm_api.cpp - exports the UNMODIFIED firmware core (firmware/AeroFC_R4_v2/src/core) as a WebAssembly module,
+// fc_wasm_api.cpp - exports the UNMODIFIED firmware core (firmware/AeroFC_R4_v3/src/core) as a WebAssembly module,
 // so the browser simulator flies exactly the code that runs on the Arduino.
 #include <string.h>
-#include "../../firmware/AeroFC_R4_v2/src/core/fc_app.h"
-#include "../../firmware/AeroFC_R4_v2/src/core/ui_menu.h"
+#include "../../firmware/AeroFC_R4_v3/src/core/fc_app.h"
+#include "../../firmware/AeroFC_R4_v3/src/core/ui_menu.h"
 
 static FcApp app;
 static UiMenu ui;

@@ -976,7 +976,7 @@ export const SCENARIOS = [
       const B = (b, ev = 1) => e.fc.button(b, ev, e.nowUs());
       let frames = 0;
       const R = () => { e.run(0.13); if (e.fc.render(e.nowUs())) frames++; };
-      for (let k = 0; k < 8; k++) { B(1); R(); }               // dashboard pages
+      for (let k = 0; k < 9; k++) { B(1); R(); }               // dashboard pages
       B(2); R();                                                  // menu
       for (let k = 0; k < 17; k++) { B(2); R(); B(3, 2); R(); B(3); R(); B(3); R(); B(1); R(); }   // open, help, back...
       c.ok(frames > 60 && e.info().state === 0, "all dashboard pages, menus and full-screen help pages draw");
@@ -1005,6 +1005,7 @@ export const SCENARIOS = [
       };
       const check = (name, e, r, side = 0.3) => {
         report(name, r);
+        e.run(0.1);     // the last motor packet is still on its way when the flight controller disarms
         c.ok(r.time > 0 && e.info().reason === 9, `${name}: motors stop by themselves, reason = landed`);
         c.ok(e.bridge.motors.every((m) => m === 0), `${name}: motors at 0`);
         c.ok(r.touchSpeed < 0.5, `${name}: touches down below 0.5 m/s`);
@@ -1076,6 +1077,135 @@ export const SCENARIOS = [
       c.metric("descent with a wobbling thumb", `heading ${Math.abs(wrap180(tr.yaw - y0)).toFixed(1)} deg, sideways ${Math.hypot(tr.north - a.north, tr.east - a.east).toFixed(2)} m`);
       c.ok(Math.abs(wrap180(tr.yaw - y0)) < 3, "keeps its heading all the way down");
       c.ok(Math.hypot(tr.north - a.north, tr.east - a.east) < 0.3, "comes straight down");
+    },
+  },
+  {
+    name: "Organisers' keyboard tool: W goes forward, typed commands and our page follow their protocol",
+    async run(c) {
+      const noseAfter = (e, p) => { e.setPilot({ pitch: p }); e.run(1.5); return e.phys.truth().pitch; };
+      // the same packets their tool sends: throttle 0, values kept until they change
+      const tool = async (params = {}) => { const e = await airborne({ params: { "Pos hold": 0, ...params } }); e.pilotMode = "stock"; e.setPilot({ thr: 0, roll: 0, pitch: 0, yaw: 0 }); e.run(0.5); return e; };
+      let e = await tool();
+      noseAfter(e, 0.1); noseAfter(e, 0.2);
+      let a = noseAfter(e, 0.3);
+      c.metric("W pressed 3 times: pitch", a, "deg");
+      c.ok(a < -2, "W steps (+0.1 each): nose down, forward");
+      noseAfter(e, 0);
+      noseAfter(e, -0.1);
+      a = noseAfter(e, -0.2);
+      c.metric("S pressed 2 times: pitch", a, "deg");
+      c.ok(a > 1.5, "S steps (-0.1 each): nose up, back");
+      noseAfter(e, 0);
+      a = noseAfter(e, -0.2);
+      c.metric("--pitch -0.2: pitch", a, "deg");
+      c.ok(a < -1.5, "--pitch -0.2 after using the keys: nose down, as their README says");
+      noseAfter(e, 0);
+      a = noseAfter(e, 0.2);
+      c.ok(a > 1.5, "--pitch 0.2: nose up, as their protocol says");
+      noseAfter(e, 0);
+      noseAfter(e, 0.1);
+      a = noseAfter(e, 0.2);
+      c.ok(a < -1.5, "back to the keys: W goes forward again");
+      e = await tool({ "Inv pitch": 1 });
+      noseAfter(e, 0.1);
+      a = noseAfter(e, 0.2);
+      c.ok(a > 1.5, "Inv pitch still reverses it, if the organisers want that");
+      // a joystick that follows their protocol never lands on steps of exactly 0.1
+      e = await tool();
+      for (let p = 0; p > -0.37; p -= 0.037) { e.setPilot({ pitch: p }); e.run(0.04); }
+      e.run(1.2);
+      c.ok(e.phys.truth().pitch < -2, "smooth joystick values follow the protocol: negative = forward");
+      // our own page's stream is not touched
+      e = await airborne({ params: { "Pos hold": 0 } });
+      e.setPilot({ thr: 2.5, pitch: 0.1 });
+      e.run(0.5);
+      e.setPilot({ pitch: 0.2 });
+      e.run(1.5);
+      c.ok(e.phys.truth().pitch > 1.5, "our page's sticks: never flipped");
+    },
+  },
+  {
+    name: "Landing and taking off again with only the organisers' tool (u, j, SPACE, codes 12 and 13)",
+    async run(c) {
+      const tool = async () => { const e = await airborne(); e.pilotMode = "stock"; e.setPilot({ thr: 0, roll: 0, pitch: 0, yaw: 0 }); e.run(0.5); return e; };
+      let e = await tool();
+      e.setPilot({ thr: 0.60 });           // j pressed 3 times
+      let t = e.until((s) => s.info().state === 0, 20);
+      c.metric("j to the ground: time until the motors stop", t, "s");
+      c.ok(t > 0 && e.info().reason === 9, "manual throttle below hover: touches down, motors stop, reason = landed");
+      e.run(0.2);
+      c.ok(e.bridge.motors.every((m) => m === 0), "motors at 0");
+      e.setPilot({ thr: 0 });              // SPACE
+      e.run(1);
+      c.ok(e.info().state === 0, "SPACE does not start the motors");
+      e.setPilot({ thr: 0.68 });           // u
+      c.ok(e.until((s) => s.phys.truth().alt > 1.0, 15) > 0, "u after SPACE: flies again");
+      e.setPilot({ thr: 0 });
+      e.run(3);
+      c.ok(e.info().state === 3 && e.info().mode === 0, "SPACE: holds height again");
+      // u straight after landing, without SPACE
+      e = await tool();
+      e.setPilot({ thr: 0.60 });
+      e.until((s) => s.info().state === 0, 20);
+      e.run(1);
+      e.setPilot({ thr: 0.62 });           // u
+      c.ok(e.until((s) => s.phys.truth().alt > 1.0, 15) > 0, "u straight after landing: takes off");
+      // hovering by hand must not count as landed, and KILL must not restart
+      e = await tool();
+      e.setPilot({ thr: 0.66 });
+      e.run(6);
+      c.ok(e.info().state === 3, "manual throttle near hover, in the air: keeps flying");
+      e.command(CODES.KILL);
+      e.run(1);
+      e.setPilot({ thr: 0.70 });
+      e.run(2);
+      c.ok(e.info().state === 0, "after KILL, throttle does not restart the motors");
+      // the command codes through their --throttle option
+      e = await tool();
+      e.setPilot({ thr: 13 });
+      e.run(0.1);
+      e.setPilot({ thr: 0 });
+      t = e.until((s) => s.info().state === 0, 20);
+      c.ok(t > 0 && e.info().reason === 9, "--throttle 13: lands and stops");
+      e.run(1);
+      e.setPilot({ thr: 12 });
+      e.run(0.1);
+      e.setPilot({ thr: 0 });
+      c.ok(e.until((s) => s.phys.truth().alt > 1.0, 15) > 0, "--throttle 12: takes off again");
+    },
+  },
+  {
+    name: "A bridge too slow to fly on: stays on the ground and says so; PLOTS page draws",
+    async run(c) {
+      // the organisers' bridge without Gazebo's Python bindings: about one burst of sensors a second
+      for (const period of [1.0, 1.6]) {       // 1.6: some one-second windows hold no packet at all
+        const e = await engine({ bridge: { burstPeriod: period } });
+        let moved = false;
+        e.run(70, (s) => { if (s.info().state !== 0) moved = true; }, 0.05);
+        c.metric(`one sensor burst every ${period} s: height after 70 s`, e.phys.truth().alt, "m");
+        c.ok(!moved && e.phys.truth().alt < 0.2, `one burst every ${period} s: never arms, can't fly away`);
+        c.ok(e.bridge.motors.every((m) => m === 0), `one burst every ${period} s: motors stay at 0`);
+      }
+      // 25 bursts a second is slow, but flies
+      const ok = await airborne({ bridge: { burstPeriod: 0.04 } });
+      c.ok(ok.info().state === 3, "25 sensor bursts per second: flies as usual");
+      // the live plots: UP from the first page wraps to PLOTS
+      const p = await airborne();
+      p.fc.button(1, 1, p.nowUs());
+      let fb = null;
+      const fly = (secs) => { for (let t = 0; t < secs; t += 0.04) { p.run(0.04); const f = p.fc.render(p.nowUs()); if (f) fb = f.slice(0); } };   // as often as the board draws
+      p.setPilot({ thr: 2.5, roll: 0.8 });
+      fly(3);
+      p.setPilot({ roll: 0 });
+      fly(2);
+      c.ok(!!fb, "the PLOTS page draws");
+      if (fb) {
+        const lit = (y0, y1) => { let n = 0; for (let y = y0; y <= y1; y++) for (let x = 12; x < 128; x++) if (fb[(y >> 3) * 128 + x] >> (y & 7) & 1) n++; return n; };
+        const litAt = (y) => { let n = 0; for (let x = 12; x < 128; x++) if (fb[(y >> 3) * 128 + x] >> (y & 7) & 1) n++; return n; };
+        c.metric("lit pixels per band RP / YT / AT / AL", `${lit(9, 20)} / ${lit(22, 33)} / ${lit(35, 46)} / ${lit(48, 63)}`);
+        c.ok(lit(9, 20) > 80 && lit(22, 33) > 80 && lit(35, 46) > 80 && lit(48, 63) > 80, "all four graphs have a trace");
+        c.ok(litAt(9) + litAt(10) + litAt(11) > 15, "the roll stick push shows in the top band");
+      }
     },
   },
   {

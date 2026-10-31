@@ -4,7 +4,7 @@ The organisers' simulator runs on **Ubuntu 22.04 + Gazebo Harmonic**. On your PC
 
 Ubuntu 22.04, Gazebo and the Python bindings are **already installed** on your PC, and `~/hil_test` is set up.
 
-## The easy way: double-click files in `AeroFC_R4_v2\gazebo\`
+## The easy way: double-click files in `AeroFC_R4_v3\gazebo\`
 
 | File | What it does | When |
 |---|---|---|
@@ -52,12 +52,12 @@ Type `exit` to leave it.
 
 **Copy the v2 tools into Ubuntu** (same as launcher 1):
 ```powershell
-wsl -d Ubuntu-22.04 --cd "$HOME\OneDrive\Desktop\MPU9250-master\AeroFC_R4_v2" -- bash tools/gazebo_wsl/install_tools.sh
+wsl -d Ubuntu-22.04 --cd "$HOME\OneDrive\Desktop\MPU9250-master\AeroFC_R4_v3" -- bash tools/gazebo_wsl/install_tools.sh
 ```
 
 **Fly the software FC in Gazebo, no board** (same as launcher 4). Start the page first:
 ```powershell
-Start-Process "$HOME\OneDrive\Desktop\MPU9250-master\AeroFC_R4_v2\START_SIMULATOR.bat" -ArgumentList "gazebo"
+Start-Process "$HOME\OneDrive\Desktop\MPU9250-master\AeroFC_R4_v3\START_SIMULATOR.bat" -ArgumentList "gazebo"
 ```
 Then Gazebo:
 ```powershell
@@ -139,4 +139,4 @@ In this Gazebo (gz-sim 8), the magnetometer's "north" points **90.8° east of th
   ```bash
   bash tools/gazebo_wsl/setup_gazebo_ubuntu2204.sh
   ```
-  Run it from the AeroFC_R4_v2 folder. It takes 10–20 minutes.
+  Run it from the AeroFC_R4_v3 folder. It takes 10–20 minutes.

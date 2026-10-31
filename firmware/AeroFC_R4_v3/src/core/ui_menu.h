@@ -47,6 +47,15 @@ class UiMenu {
   uint32_t toastUntil = 0, lastRenderUs = 0, lastHistUs = 0, now = 0, tickerStartUs = 0;
   int8_t altHist[64];
   uint8_t histIdx = 0;
+  // the PLOTS page: 11.6 s of history, one column per 100 ms
+  static const int PLOT_N = 116;
+  int8_t plotRoll[PLOT_N], plotPitch[PLOT_N], plotYaw[PLOT_N], plotThr[PLOT_N];   // sticks, -100..100 %
+  int8_t plotAttR[PLOT_N], plotAttP[PLOT_N];                                      // attitude, degrees x 3
+  int16_t plotAlt[PLOT_N];                                                        // height, cm
+  uint8_t plotIdx = 0;
+  uint32_t lastPlotUs = 0;
+  void samplePlots();
+  void drawPlots(Gfx &g);
   int8_t paramIdx[24];
   uint8_t paramN = 0;
   // full-screen help

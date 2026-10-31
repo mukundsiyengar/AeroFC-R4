@@ -1,4 +1,4 @@
-// aerofc_sitl.cpp - "software in the loop": the UNMODIFIED firmware core (firmware/AeroFC_R4_v2/src/core) as a
+// aerofc_sitl.cpp - "software in the loop": the UNMODIFIED firmware core (firmware/AeroFC_R4_v3/src/core) as a
 // Linux program that talks to the organisers' bridge over the virtual serial port, exactly like the Arduino does
 // over USB.  Lets you fly (and test) this flight controller in the real Gazebo without the board.
 //
@@ -20,7 +20,7 @@
 #include <termios.h>
 #include <time.h>
 #include <unistd.h>
-#include "../../firmware/AeroFC_R4_v2/src/core/fc_app.h"
+#include "../../firmware/AeroFC_R4_v3/src/core/fc_app.h"
 
 static FcApp app;
 static volatile sig_atomic_t quit = 0;
@@ -161,9 +161,9 @@ int main(int argc, char **argv) {
     if ((uint32_t)(now - lastPrint) >= 1000000u) {
       lastPrint = now;
       const FlightCore &c = app.core;
-      fprintf(stderr, "[sitl] %-8s %-8s alt %7.2f m (target %7.2f)  N %7.2f E %7.2f  v %5.2f m/s  pos %-9s %s  "
+      fprintf(stderr, "[sitl] %3.0f Hz %-8s %-8s alt %7.2f m (target %7.2f)  N %7.2f E %7.2f  v %5.2f m/s  pos %-9s %s  "
                       "yaw %4.0f off %5.1f gps %4.2f m %s %s%s\n",
-              app.session == SES_RUNNING ? "RUNNING" : "waiting", stateName(c.state), (double)c.altf.alt,
+              (double)c.imuHz, app.session == SES_RUNNING ? "RUNNING" : "waiting", stateName(c.state), (double)c.altf.alt,
               (double)c.altTarget, (double)c.pos.kn.p, (double)c.pos.ke.p,
               (double)sqrtf(c.pos.kn.v * c.pos.kn.v + c.pos.ke.v * c.pos.ke.v),
               c.posActive ? posStateName(c.posState) : (c.posFailed ? "FAILED" : "OFF"),

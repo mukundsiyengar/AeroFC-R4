@@ -2,8 +2,8 @@
 
 | Problem | Cause / fix |
 |---|---|
-| `START_SIMULATOR.bat` opens a page that says it can't load fc.wasm | The page must come from the local server, not a double-clicked HTML file. Use the .bat and keep its black window open. v2 uses **port 8766** (v1: 8765). |
-| The page behaves like the old version | Make sure the address is `localhost:8766` (v2) and press Ctrl+F5 once. The v2 server never lets the browser keep old copies. |
+| `START_SIMULATOR.bat` opens a page that says it can't load fc.wasm | The page must come from the local server, not a double-clicked HTML file. Use the .bat and keep its black window open. v3 uses **port 8767** (v2: 8766, v1: 8765). |
+| The page behaves like the old version | Make sure the address is `localhost:8767` (v3) and press Ctrl+F5 once. The v2 server never lets the browser keep old copies. |
 | "Connect Arduino" does nothing or isn't supported | Use **Edge or Chrome** (Web Serial). Close the Arduino IDE Serial Monitor; only one program can open the COM port. |
 | No COM port appears | Use a data USB-C cable. If the R4 is attached to Ubuntu (usbipd), run `gazebo\6_ARDUINO_back_to_Windows.bat`. |
 | Upload fails (for example `get_status: LIBUSB_ERROR_TIMEOUT` or `Lost device after RESET?`) | Use `UPLOAD_FIRMWARE.bat`: it works even with an older firmware on the board. Otherwise close the simulator page and the Serial Monitor. **Double-press RESET** (the LED "breathes") and upload again. |
@@ -32,6 +32,7 @@
 | Gazebo: the page shows no data | The page retries by itself while Gazebo starts. The Ubuntu window must say `bridge_plus ... http://127.0.0.1:8770`. If needed: More connections → Gazebo in WSL. |
 | **Gazebo: the drone hovers at 1.5 m and my keys do nothing** | Read the banner at the top of the page, and the black Ubuntu window (docs/08). A red banner `Gazebo is running...` means this page isn't flying Gazebo: press **Connect to Gazebo**. An orange banner `Click on this page once` means the keys are going to another window. |
 | Commands feel slow in Gazebo | The address must be `http://127.0.0.1:8770`, not `localhost`. With `localhost`, Windows tries IPv6 first, and that added 320 ms to every command. |
+| OLED says `BRIDGE TOO SLOW` and the drone stays on the ground | Their bridge is in its slow mode (it prints `Gazebo Transport: Subprocess Fallback`), with about one motor update a second. Nothing can fly on that. Fix on that PC: `sudo apt install python3-gz-transport13 python3-gz-msgs10`, then start the bridge again. |
 | Motors always show about 66 % | That is correct: the same weight needs the same thrust at any height (docs/04). Watch **Throttle stick**, **Climb speed** and **Power above hover** on the page. |
 | Gazebo: "No /dev/ttyACM0" | Run `gazebo\2_ARDUINO_to_Ubuntu.bat` first and keep its window open. |
 | Settings lost after power off | Save with MENU → Storage → Save (refused while armed). After a firmware update with new parameters, defaults are used ("dflt" on SYSTEM). |

@@ -1,7 +1,7 @@
 # 6. How it works (a beginner's tour of the flight code)
 
 ```
- simulator (Gazebo)          Arduino UNO R4  (firmware/AeroFC_R4_v2/src/core)
+ simulator (Gazebo)          Arduino UNO R4  (firmware/AeroFC_R4_v3/src/core)
  ───────────────────         ───────────────────────────────────────────────────────────────────────────
  IMU  BARO  MAG  GPS  ──USB──► hil_protocol ─► sensors ─► ahrs_ekf (roll, pitch, yaw)  ─┐
  every 20 ms                   (packets, CRC)  (FLU->FRD,   alt_ekf  (height, climb)    ├─► flight_core ─► controllers ─► mixer ─┐
@@ -126,6 +126,7 @@ DISARMED --arm (checks OK)--> IDLE --take-off / climb stick / START--> TAKEOFF -
 
 **Arming checks:**
 - sensors fresh
+- at least 9 sensor bursts a second for 4 s in a row (the organisers' bridge has a slow mode that nothing can fly on)
 - EKF ready (25 valid samples)
 - tilt < 15°
 - not calibrating
@@ -150,6 +151,10 @@ The official v1 protocol, byte-identical to `hil_protocol.py`; the test "Protoco
 | 10 / 11 / 12 / 13 / 16 | ARM / DISARM / TAKEOFF / LAND / KILL (sent 3 times, acted on once) |
 | 17 / 18 / 19 | speed mode ECO / NORMAL / SPORT |
 | 20 / 21 | position hold on/off, stick style SPEED/ANGLE (toggle) |
+
+Their keyboard tool's `w` sends +pitch, which their protocol calls backward. Only that tool moves pitch in steps of exactly 0.1, so those steps are flipped (`onControlInput` in `flight_core.cpp`).
+
+After a landing, more manual throttle (their `u` key) takes off again, because their tool has no other way to do it. Never after a kill or a crash.
 
 The pilot-link failsafe only becomes active after a continuous stream of at least 10 Hz in the extended format has been seen. The stock tool only sends on key presses, and its silence must not trigger a landing.
 

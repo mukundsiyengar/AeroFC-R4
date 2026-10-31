@@ -10,7 +10,7 @@
 #include "flight_core.h"
 #include "telemetry.h"
 
-static const char FW_VERSION[] = "AeroFC-R4 2.0";
+static const char FW_VERSION[] = "AeroFC-R4 3.0";
 static const uint32_t SETTINGS_MAGIC = 0x34434641u;   // "AFC4"
 
 enum Session : uint8_t { SES_WAITING = 0, SES_HANDSHAKE, SES_RUNNING, SES_STOPPED };

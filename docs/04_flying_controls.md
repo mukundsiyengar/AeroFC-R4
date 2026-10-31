@@ -159,7 +159,16 @@ The firmware understands it exactly:
 - `u` / `j` = manual throttle around 0.66
 - `w a s d q e` = steps of 0.1 that **stay** until you press space (their help text says 0.2; the code sends 0.1)
 
-Their tool labels `w` "forward" but sends *+pitch*. The official protocol (`HIL_PROTOCOL.md`) says *+pitch = backward*, and the firmware follows the protocol, so with their tool `w` flies backwards. If the organisers want `w` = forward, flip **MENU → Input → Inv pitch** (no upload needed).
+Their tool labels `w` "forward" but sends *+pitch*, which their protocol (`HIL_PROTOCOL.md`) calls backward. The firmware recognises the tool's steps of exactly 0.1 and flips them, so:
+- `w` goes forward, as the tool says.
+- `--pitch -0.2`, a joystick and our page follow the protocol, so negative is forward.
+- The exception: a typed `--pitch 0.1` or `-0.1` looks like a key press and flies reversed.
+- **MENU → Input → Inv pitch** still reverses everything, if the organisers want that.
+
+**Landing with only their tool:**
+- Press `j` twice. It comes down, and the motors stop about 3 s after touch-down (reason: landed).
+- Then `SPACE`, then `u`: it takes off again. Press `SPACE` at the height you want.
+- Or use commands: `python3 control_input.py --throttle 13 --duration 0.2` lands gently, and `--throttle 12` takes off to 1.5 m.
 
 ## Sign convention (from HIL_PROTOCOL.md)
 

@@ -44,6 +44,11 @@ The same menu runs on the real 0.96" OLED and on the **virtual OLED** in the sim
    - **I2C err**: OLED transfer errors (the driver repairs them by itself)
    - **WDT on/off**: the watchdog runs only while armed
    - whether settings came from flash or defaults
+9. **PLOTS** (press UP once from the first page): live graphs of the last 12 s, on the board itself.
+   - **RP:** roll stick, with pitch stick dotted.
+   - **YT:** yaw stick, with throttle stick dotted.
+   - **AT:** roll, with pitch dotted; top and bottom are 40°.
+   - **AL:** height, scaled to fit, with the height now in metres.
 
 ## MENU
 

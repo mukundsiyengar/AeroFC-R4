@@ -11,7 +11,7 @@ import subprocess
 import sys
 
 root = pathlib.Path(__file__).resolve().parent.parent
-core = root / "firmware" / "AeroFC_R4_v2" / "src" / "core"
+core = root / "firmware" / "AeroFC_R4_v3" / "src" / "core"
 api = root / "tools" / "wasm" / "fc_wasm_api.cpp"
 out = root / "simulator" / "fc.wasm"
 

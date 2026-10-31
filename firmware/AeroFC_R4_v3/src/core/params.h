@@ -6,7 +6,7 @@
 #pragma once
 #include <stdint.h>
 
-static const uint16_t PARAMS_VERSION = 6;
+static const uint16_t PARAMS_VERSION = 7;
 
 enum ParamGroup : uint8_t {
   PG_MODES = 0, PG_RATE, PG_ANGLE, PG_POSITION, PG_ALT, PG_FEATURES, PG_FAILSAFE, PG_INPUT, PG_MOTOR, PG_ESTIMATOR,

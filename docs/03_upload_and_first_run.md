@@ -7,7 +7,7 @@
 **Or with the Arduino IDE:**
 
 1. Plug the R4 Minima into the PC with the USB-C cable.
-2. Open **Arduino IDE 2**, then **File → Open** → `AeroFC_R4_v2\firmware\AeroFC_R4_v2\AeroFC_R4_v2.ino`. All the `src` files come with it automatically. The IDE title shows `AeroFC_R4_v2`, so you can see it is the new version.
+2. Open **Arduino IDE 2**, then **File → Open** → `AeroFC_R4_v3\firmware\AeroFC_R4_v3\AeroFC_R4_v3.ino`. All the `src` files come with it automatically. The IDE title shows `AeroFC_R4_v3`, so you can see it is the new version.
 3. **Tools → Board → Arduino UNO R4 Boards → Arduino UNO R4 Minima**.
 4. **Tools → Port** → the COM port that appears when you plug the board in (for example COM5).
 5. Press **Upload** (the → arrow). The IDE should finish with "Done uploading".
@@ -81,6 +81,6 @@ The fixes in v2:
 - `tools\check_firmware.bat`: compiles the firmware for the R4 and prints flash and RAM use.
 - `tools\run_tests_headless.bat`: runs all automated flight tests.
 - **Upload the firmware again after every update of this folder.** The page and the firmware belong together.
-- After changing anything in `firmware/AeroFC_R4_v2/src/core`:
+- After changing anything in `firmware/AeroFC_R4_v3/src/core`:
   - run `python tools\build_wasm.py` (the simulator's software FC)
   - run `python tools\sitl\build_sitl.py` (the Linux SITL), then `gazebo\1_UPDATE_tools_in_Ubuntu.bat`

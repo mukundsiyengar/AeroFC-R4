@@ -22,7 +22,7 @@ enum Reason : uint8_t {
   R_NONE = 0, R_USER, R_PILOT_LINK, R_SENSORS, R_ESTIMATOR, R_CRASH, R_STOP, R_KILL, R_IDLE, R_LANDED, R_GEOFENCE
 };
 enum ArmResult : int8_t {
-  ARM_OK = 0, ARM_ALREADY, ARM_NO_SENSORS, ARM_EST_NOT_READY, ARM_NOT_LEVEL, ARM_CALIBRATING, ARM_TOO_SOON
+  ARM_OK = 0, ARM_ALREADY, ARM_NO_SENSORS, ARM_EST_NOT_READY, ARM_NOT_LEVEL, ARM_CALIBRATING, ARM_TOO_SOON, ARM_LINK_SLOW
 };
 // Command codes carried in the CONTROL_INPUT throttle field (our extension, forwarded untouched by the bridge)
 enum PilotCode : uint8_t {
@@ -60,6 +60,8 @@ struct PilotState {
   uint32_t winStartUs = 0;
   uint8_t rateHz = 0;
   int lastCode = 0;
+  float lastStockPitch = 0, lastStockThr = 0;   // last values from a tool that isn't our page
+  bool keyTool = false;                         // pitch moves in the 0.1 steps of the organisers' keyboard tool
 };
 
 class FlightCore {
@@ -87,6 +89,11 @@ class FlightCore {
   void resetEstimator();
 
   bool armed() const { return state != ST_DISARMED; }
+  // The organisers' bridge has a slow mode (no Gazebo Python bindings) with about one motor update per second. Nothing
+  // can fly on that: measured, it flies away to over 1000 m, their own fake Arduino too. So don't take off. What the
+  // board sees then is about 1 sensor burst a second, with short runs of 8-16, so it takes a steady rate to arm.
+  bool linkTooSlow() const { return goodWindows_ < 4; }
+  bool linkTooSlowShown() const { return slowWindows_ >= 3; }     // for the OLED: not during the first seconds of data
   bool motorsReady = false;             // a new motor command is ready to send
 
   // ---- outputs / status (read by telemetry, OLED and the simulator)
@@ -149,6 +156,7 @@ class FlightCore {
   uint32_t autoTakeoffUntil_ = 0;
   float idleTimer_ = 0, landTimer_ = 0, crashTimer_ = 0, takeoffTimer_ = 0;
   float descentSp_ = 0;     // speed the climb stick is asking to go down at (m/s), builds up gradually
+  uint8_t slowWindows_ = 0, goodWindows_ = 0;   // one-second windows in a row with too few sensor bursts / enough
   uint16_t imuCount_ = 0, ctrlCount_ = 0;
   uint32_t rateWinUs_ = 0;
   double lat0_ = 0, lon0_ = 0;

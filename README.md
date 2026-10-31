@@ -1,8 +1,17 @@
-# AeroFC-R4 v2: flight controller for the Arduino UNO R4 Minima
+# AeroFC-R4 v3: flight controller for the Arduino UNO R4 Minima
 
 This is a quadcopter flight controller for the **Aerovidya 2026** hackathon. The **Arduino UNO R4 Minima** is the real flight controller. The drone itself (body, motors, sensors) is simulated by the organisers' **UAV HIL simulator** (Gazebo). They talk over USB using the official `"HI"` packet protocol.
 
-This folder is **version 2**. Version 1 (`..\AeroFC_R4\`) is unchanged.
+This folder is **version 3**. Versions 1 and 2 (`..\AeroFC_R4\`, `..\AeroFC_R4_v2\`) are unchanged.
+
+## New in v3: everything on the R4
+
+At the event, the organisers plug the R4 into their laptop and use only their simulator from GitHub. Nothing of ours is installed there. **Print [docs/12](docs/12_hand_over_sheet.md) and hand it over with the board.**
+
+- **Their keyboard tool works as labelled.** `W` goes forward, while a typed `--pitch -0.2` also goes forward as their protocol says. Only a typed `--pitch 0.1` or `-0.1` flies reversed, because it looks like a key press.
+- **Land and take off again with only their tool.** `j` comes down and the motors stop by themselves after touch-down; `u` takes off again. `--throttle 13` lands, `--throttle 12` takes off.
+- **Live plots on the board:** the OLED's new PLOTS page shows RC input, attitude and altitude.
+- **Won't fly away on their bridge's slow mode.** Without Gazebo's Python bindings, their bridge updates the motors about once a second, and any flight controller flies away (their own fake Arduino reached over 1000 m). The R4 now stays on the ground and shows `BRIDGE TOO SLOW`. The first take-off waits about 4 s for a steady sensor rate.
 
 ## New in v2
 
@@ -62,11 +71,12 @@ This folder is **version 2**. Version 1 (`..\AeroFC_R4\`) is unchanged.
 ## What is tested, and what is not yet
 
 **Tested:**
+- **Your real R4 with v3 and only the organisers' files, freshly unpacked from their zip:** their unmodified bridge, every key of their keyboard tool, their timed commands, land and take off again, restarts and wrong start order, and 10 minutes of random flying, then it holds within 0.02 m (docs/11, section 0).
 - **On a real R4 Minima in the real Gazebo, through launcher 3 and the organisers' bridge: over 10 minutes of flying, then holds within 0.14 m,** and an RC-loss landing 0.00 m from the spot. 9 of my 11 checks are inside their limits; the other two are small misses, explained in docs/11 (0.30 m settling after a stop against under 0.3 m, and a brief 7.4° heading offset against under 5°). Control delay: typically 5 ms, worst 64 ms.
 - **On a real R4 Minima in the real Gazebo through launcher 3:** commands from the page, take-off again and stick landings from 1.5, 7.8 and 22 m (docs/11).
 - **On a real R4 Minima with the simulator's physics:** wind 8 m/s moves it 0.78 m, gyro noise 0.56 m, gyro drift 1.67 m. Control step 946 µs at most, 0 CRC errors.
-- **Compiles** for the UNO R4 Minima with 0 warnings in our code: 112 KB flash (42 %), 15 KB RAM (46 %). Check it with `tools\check_firmware.bat`.
-- **35/35 automated flight tests** in the browser replica. They run the same flight code, compiled to WebAssembly. They cover all v1 tests plus:
+- **Compiles** for the UNO R4 Minima with 0 warnings in our code: 114 KB flash (43 %), 16 KB RAM (48 %). Check it with `tools\check_firmware.bat`.
+- **38/38 automated flight tests** in the browser replica. They run the same flight code, compiled to WebAssembly. They cover all v1 tests plus:
   - position hold in calm air and in 5 and 8 m/s wind
   - SPEED and ANGLE sticks
   - the speed modes
@@ -84,6 +94,7 @@ This folder is **version 2**. Version 1 (`..\AeroFC_R4\`) is unchanged.
   - position hold recovering after FAILED
   - gyro noise and drift switched on in flight
   - landing with the stick, a wobbling left stick, and what the page says about the command link
+  - the organisers' keyboard tool, landing with only their tool, and a bridge too slow to fly on
 
   A 2-hour simulated flight also ran. See [docs/11](docs/11_test_report.md).
 - **9/9 checks in the real Gazebo** (Ubuntu 22.04 in WSL, Gazebo Harmonic), flown by the same firmware code built for Linux:
@@ -101,11 +112,11 @@ This folder is **version 2**. Version 1 (`..\AeroFC_R4\`) is unchanged.
 ## Folder map
 
 ```
-AeroFC_R4_v2/
-  START_SIMULATOR.bat          simulator / ground station (Edge, port 8766)
+AeroFC_R4_v3/
+  START_SIMULATOR.bat          simulator / ground station for practice at home (Edge, port 8767)
   UPLOAD_FIRMWARE.bat          compile and upload to the board, no Arduino IDE window needed
   gazebo/                      double-click launchers for Ubuntu + Gazebo (docs/08)
-  firmware/AeroFC_R4_v2/       the Arduino sketch (open AeroFC_R4_v2.ino); no libraries to install
+  firmware/AeroFC_R4_v3/       the Arduino sketch (open AeroFC_R4_v3.ino); no libraries to install
     src/core/                  flight code (EKF, position hold, controllers, protocol, menu + help); also runs in the simulator and SITL
     src/hal/                   Arduino-only parts: OLED driver, buttons, flash, reset cause / watchdog
   simulator/                   index.html (fly), tests.html (automated tests), fc.wasm
@@ -128,3 +139,4 @@ AeroFC_R4_v2/
 9. [Event-day checklist](docs/09_event_day_checklist.md)
 10. [Troubleshooting](docs/10_troubleshooting.md)
 11. [Test report](docs/11_test_report.md)
+12. [Hand-over sheet for the organisers' laptop](docs/12_hand_over_sheet.md)
