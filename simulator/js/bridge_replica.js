@@ -25,6 +25,11 @@ export class BridgeReplica {
     this.lastActivity = 0;
     this.nextBurst = 0;
     this.bursts = 0;
+    this.wallNow = this.opts.wallNow || (() => performance.now());
+    this.answeredT = null;     // simulation time of the newest sensor burst the flight controller has answered
+    this.answerWall = 0;
+    this.controlDelayMs = 0;
+    this.controlDelayMax = 0;
     this.motors = [0, 0, 0, 0];
     this.status = null;             // last decoded STATUS
     this.statusTime = -1;
@@ -101,6 +106,13 @@ export class BridgeReplica {
           if (!this.running || pk.payload.length < 16) break;
           const m = unpackF32(pk.payload, 4).map((v) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0));
           this.motors = m;
+          {                                     // the packet carries the timestamp of the sensors it answers
+            const now = this.now(), ts = Number(pk.ts) / 1e9;
+            this.answeredT = ts <= now && now - ts < 2 ? ts : now;            // (older firmware: its own clock)
+            this.answerWall = this.wallNow();
+            this.controlDelayMs = (now - this.answeredT) * 1000;              // what the drone feels
+            this.controlDelayMax = Math.max(this.controlDelayMs, this.controlDelayMax * 0.998);   // fades in ~10 s
+          }
           this.counts.actuator++;
           this.phys.setRotorVelocities(m.map((v) => v * 1000.0));
           break;

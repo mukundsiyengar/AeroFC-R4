@@ -1,39 +1,175 @@
-# 11. Test report (closed-loop, software-in-the-loop)
+# 11. Test report (v2, final firmware)
 
-**How:**
-- The flight code in `firmware/AeroFC_R4/src/core` is compiled unchanged to WebAssembly.
-- It flies a replica of the Gazebo `betaflight_x3`:
-  - mass 1.52 kg, inertia from `model.sdf`
-  - the MulticopterMotorModel (k·ω², motor time constants 12.5/25 ms, yaw moment 0.016, rotor drag, thrust drop with axial speed)
-  - 1 ms physics, ground contact
-  - Gazebo-style sensors
-- The drone sits behind a replica of `hil_bridge_v1.py`:
-  - handshake, 4-packet sensor burst every 20 ms
-  - zero packets before data arrives
-  - 1.5 s failsafe
-  - re-handshake on HELLO
+Everything below flies the **unchanged flight code** in `firmware/AeroFC_R4_v2/src/core`. There are three levels, from fastest to most real.
 
-Run the suite with `tools\run_tests_headless.bat` or open `simulator/tests.html`. It runs faster than real time (about 3 s in total).
+## A. Real UNO R4 Minima (your board)
 
-**Result: 12 / 12 scenarios passed.** Firmware build for the UNO R4 Minima: 92 556 B flash (35 %), 13 956 B RAM (42 %).
+### A0. Commands and stick landings: real R4 + real Gazebo, through the launchers
+
+**How it runs:** `gazebo\3_FLY_ARDUINO_in_Gazebo.bat` with the Gazebo window open, the board attached with usbipd as in launcher 2 (it was already shared, so the permission step wasn't needed), and the simulator page in Gazebo mode sending real key events. A stand-in for Edge recorded the address the launcher asked for: `index.html?mode=gazebo`.
+
+**What was wrong before:**
+- The launchers handed `?mode=gazebo` to a batch file, which splits its arguments at `=`. The page opened as `index.html?mode` and flew its own built-in copy, so the R4 received no commands at all (`rc_thr = 0.0` in all three logs of that morning).
+- Each command is a new connection, and `localhost` first tries IPv6, which Ubuntu's bridge doesn't listen on: 315 ms per command. `127.0.0.1` takes about 12 ms. In the software FC run, a key press now reaches the flight controller and comes back in telemetry in 56 ms.
+
+| Command from the page | Real R4 in Gazebo |
+|---|---|
+| W, 3 s (0.6 stick) | 2.99 m/s, then brakes to HOLDING in 1.5 s, holds within 0.12 m |
+| E, 2 s | turns from 90° to 192° |
+| R, 3 s | climbs from 1.49 to 7.77 m |
+| T | takes off again after every landing, about 3 s to 1.5 m |
+
+**Landing with the stick held down** (all end with motors off, reason: landed):
+
+| From | Time | Touch-down speed | Fastest | Sideways | Heading change | Largest tilt |
+|---|---|---|---|---|---|---|
+| 7.8 m, NORMAL | 11.2 s | 0.21 m/s | 1.13 m/s | 0.1 m | 0.0° | 0.1° |
+| 1.5 m, NORMAL | 5.2 s | 0.28 m/s | 0.72 m/s | 0.0 m | 0.0° | 0.0° |
+| 22 m, SPORT | 15.6 s | 0.18 m/s | 2.80 m/s | 0.0 m | 0.0° | 0.1° |
+| 1.5 m, gamepad with a wobbling thumb (fake pad: sideways 0.4, down 1.0) | 5.5 s | 0.26 m/s | 0.75 m/s | 0.0 m | 0.0° | 0.0° |
+
+Sideways comes from telemetry in 0.1 m steps; the distance from the hold point (0.01 m steps) stayed at or below 0.02 m. The commands and the first two landings are from the final firmware. The other flights in this section (SPORT, the fake gamepad, the L key and the RC cut) used the firmware just before the heading fix in A1, which doesn't touch the way down.
+
+Before the change, in the browser replica: full stick from 1.5 m reached the ground in 1.3 s with a 0.12 m bounce, and the motors never stopped. After: 5.5 s, 0.03 m bounce, motors stop.
+
+The L key from 1.5 m took 5.9 s (touch-down 0.26 m/s). Cut RC link: failsafe lands on the spot in 8.0 s, reason pilot link.
+
+Throughout: control step at most 1014 µs, **0 CRC errors**. Through usbipd the board gets 37–44 sensor bursts per second instead of 50, with Gazebo at real time (real-time factor 1.0); the flight stays steady. The page's commands arrive at 17–25 per second with Gazebo's 3D window open on this PC. A real gamepad and the real Edge window are still to be checked by you.
+
+### A1. Real R4 + real Gazebo + the organisers' bridge: 10-minute check, 9 of 11 inside my limits
+
+**How it runs:** launcher 3's path (usbipd, Gazebo window open) with the final firmware. `sitl_check.py --long 10` flies it with pilot packets for over 10 minutes.
+
+| Check | Limit | Result |
+|---|---|---|
+| Auto take-off to 1.5 m | | done |
+| Position hold active after take-off | | HOLDING |
+| Hover: stays on its spot | under 0.3 m | 0.01 m |
+| Forward stick 0.6 (3 m/s) | moves | 2.99 m/s |
+| Let go: brakes, switches to HOLDING | | 2.0 s, stops 3.3 m after release |
+| **Then holds its spot** | under 0.3 m | **0.30 m: missed** |
+| After 10 min of flying it still holds its spot | under 0.5 m | 0.14 m |
+| **Heading offset during the long flight** | under 5° | **worst 7.4°: missed** |
+| Still flying with position hold active | | yes |
+| RC link cut: failsafe starts | | after 2.0 s |
+| Failsafe lands on the spot, disarms (reason pilot link) | | 5.9 s, 0.00 m from where the link was lost |
+
+**The two misses are small, and I left the limits as they were:**
+- **0.30 m:** telemetry reads position in 0.1 m steps, and this is the drone still settling in the first seconds after a stop. After the 10-minute flight it held within 0.14 m.
+- **7.4°:** the heading offset was above 5° for 24 s of the 11 minutes, and it corrected itself.
+
+**Why this path is softer than my earlier test relay:** the same check through a relay with no Gazebo window scored 11/11 on the older firmware (worst offset 1.1°, stopped in 1.4 s). Through usbipd with the window open, the board gets 37–44 sensor bursts per second instead of 50. The software FC with no window still brakes in 1.3 s (section B).
+
+**Safe margin measured:** control delay typically 5 ms, worst 64 ms, below the 80 ms limit (`bridge_plus` now prints this in the black window).
+
+**A real fault this test found and fixed:** the first run scored 10/11, with the heading offset jumping 27° in one step (worst 21°). The IMU and GPS accelerations are a little apart in time, so while the acceleration turns, its angle looks wrong without any compass error. Such samples now count for nothing unless the angle is over 35°, and the fine filter doesn't learn during a fast turn. True compass errors still get corrected: 60° in wind 1.14 m, 76° and 180° learned (scenarios 17 and 18).
+
+### A2. Real R4 + the simulator's physics, with wind and gyro faults
+
+**How it runs:** the page's real-time physics behind a test relay to COM8, in place of the browser's serial permission click, with the page's wait-for-board limit on.
+
+| Phase | Moved | Largest tilt | Notes |
+|---|---|---|---|
+| Hover, calm | 0.00 m | 0.0° | |
+| Forward stick 3 s, then let go | stops 2.1 m later | | HOLDING |
+| **Wind 8 m/s** | 0.78 m | 9.0° | comes back |
+| **Gyro noise 2 °/s** | 0.56 m | 1.5° | |
+| **Gyro drift 3 °/s, switched on in flight** | 1.67 m | 3.4° | attitude error peaks at 8.7°, then fully recovers |
+| RC link cut | lands 0.18 m from the spot | | disarmed, reason pilot link |
+
+Throughout: control step at most 946 µs, **0 CRC errors**, control delay at most 19 ms, simulation at 1.00× real time. (Measured earlier the same day, before the stick-landing and heading changes.)
+
+### A3. Uploading to the real board
+
+| Situation | Arduino IDE's route | `UPLOAD_FIRMWARE.bat` |
+|---|---|---|
+| Fresh boot, nobody listening for 20 s | works (failed before the fix) | |
+| A program talked, then closed | works | |
+| Idle for 60 s | works | |
+| **After a flight (watchdog running)** | works (failed before the fix) | |
+| Any of the above | | works |
+
+## B. Real Gazebo, firmware built for Linux (no board): 9 / 9 checks
+
+`run_sitl.sh` + `sitl_check.py` with the height limit ON at 20 m:
+- take-off, then hover within 0.01 m
+- forward and let go: brakes in 1.3 s, stops 2.3 m later, holds within 0.10 m
+- **height limit 20 m with full climb stick: highest 20.05 m**
+- RC loss from 19.9 m: failsafe after 2.0 s, lands in 36.9 s, 0.00 m from the spot
+
+## C. Browser replica: 35 / 35 scenarios
+
+**How it runs:** the flight code is compiled to WebAssembly and flies a replica of the Gazebo `betaflight_x3`, with Gazebo's real magnetometer field, behind a replica of `hil_bridge_v1.py`. Faster than real time. Run it with `tools\run_tests_headless.bat` or open `simulator/tests.html`.
 
 | # | Scenario | Key results |
 |---|---|---|
-| 1 | Protocol | CRC32 = zlib. 11 packet types byte-identical to the official `hil_protocol.py`. Resync after garbage and a CRC error. The firmware answers HELLO with HELLO_ACK "UAV_HIL_V1". |
-| 2 | Handshake | HELLO → ACK → START. 0.99 motor packets per sensor burst. Heartbeat gap max 0.201 s. STATUS telemetry received. |
-| 3 | Auto take-off + hover | FLYING after 3.1 s, peak 1.61 m (target 1.5 m). Hover 1.498 m ± 0.001 m, tilt < 0.03°. Learned hover command 0.660. |
-| 4 | Directions (mixer sign test) | Roll +0.4 → +9.7° and moves right. Pitch −0.4 → −9.7° (nose down) and moves forward. Yaw +0.5 → +71° in 2 s (clockwise). Heading drift after release 2.5°. |
-| 5 | Step response + estimator | Roll step to 14.8°: rise 0.32 s, overshoot 2.8 %, settled 0.46 s. EKF error during a 5 s 15° tilt: roll RMS 0.76°, pitch RMS 0.58° (max 1.4°). |
-| 6 | Climb stick | +1.94 m in 2 s full climb. Holds the new height (−4 mm in 3 s). Descends with the stick. |
-| 7 | Stock `control_input.py` | 0.66 → manual, holds about 1.50 m. 0 → altitude hold at the current height. Sticky +0.1 roll → 2.05°. No false link-loss failsafe. |
-| 8 | Landing | 1.5 m → touch-down → auto-disarm in 6.2 s, reason "landed". TAKEOFF works again. |
-| 9 | Failsafes | FC silent → bridge stops the motors after 1.5 s → FC HELLO → bridge re-ACK → session running. STOP → disarm. KILL → off. Pilot stream lost → failsafe landing → disarmed. |
-| 10 | Crash detection | Flip → motors off (reason CRASH). With crash detection OFF, the motors are not cut. |
-| 11 | Robustness (each: take-off, roll/pitch/yaw manoeuvres, hover) | Stable with all of: +30 ms delay; 40 Hz bursts with ±3 ms jitter; inertia ×1.3 and ×0.7; mass +15 %; gyro noise 0.6 °/s + bias 1.1 °/s + accel/baro/compass noise; wind 3 m/s + gusts; 800 rad/s world (Motor max 0.8); motors twice as slow. Max tilt 12–14° (commanded 12.5°), altitude 1.44–1.52 m. |
-| 12 | OLED menu + settings | Dashboard draws. Menu edit changes Roll P by 2 steps. The settings blob restores on another board. A corrupted blob is rejected by CRC. Arming is refused without sensor data. |
+| 1 | Protocol: CRC32 + framing = official `hil_protocol.py` | byte-identical, resync after garbage |
+| 2 | Handshake, motors per burst, heartbeat | 0.993 motor packets per burst, heartbeat gap 0.201 s |
+| 3 | Auto take-off to 1.5 m, hover | 3.1 s, peak 1.62 m, hover ±1 mm |
+| 4 | Stick directions | roll +0.4 → 9.6° right, pitch −0.4 → 9.5° nose down |
+| 5 | Attitude step + estimator | rise 0.32 s, overshoot 2 %, EKF error RMS 0.14° |
+| 6 | Climb / descend | ~2 m/s (NORMAL), drift after release −0.03 m |
+| 7 | Organisers' `control_input.py` semantics | 0.66 = hover, sticky +0.1 = 2° |
+| 8 | Land, touch-down, auto-disarm | 5.3 s from 1.5 m |
+| 9 | Failsafes: FC silent, STOP, KILL, pilot link | all OK |
+| 10 | Crash detection on / off | OK |
+| 11 | Robustness: +30 ms, 40 Hz, inertia ±30 %, mass +15 %, noise + bias, wind, 800 rad/s, slow motors | all stable, max tilt 13.9° |
+| 12 | Settings, OLED menu, buttons | menu edit, settings blob + CRC |
+| 13 | Position hold: calm, wind 5 and 8 m/s | calm 0.00 m; 5 m/s peak 0.51 m; 8 m/s peak 0.42 m → 0.14 m |
+| 14 | SPEED sticks: full stick, release | 4.89 m/s; stops in 1.7 s; then within 0.14 m |
+| 15 | ANGLE sticks with position hold | 0.6 stick = 15.3°; holds within 0.31 m |
+| 16 | Speed modes ECO / NORMAL / SPORT | 1.97 / 4.87 / 9.77 m/s; 14.8 / 24.6 / 34.5° |
+| 17 | Compass error −30…+30° in wind; 60° | within 0.17 m; 60°: 1.14 m |
+| 18 | Big compass error −76° and 180° | learned 76.1° / 179.9°, then holds within 0.11 m |
+| 19 | 49 m from home + full 360° turn | max error 0.17 m |
+| 20 | Take-off and landing in 5 m/s wind | take-off drift 0.73 m, lands 0.10 m from the hold point |
+| 21 | RC link lost: LAND / HOLD / link back | failsafe after 1.99 s, lands 0.01 m from the spot; HOLD drift 0.03 m |
+| 22 | GPS stuck / compass off / noisy GPS | falls back in 0.46 s; noisy 0.3 m: 0.61 m; + 150 ms delay: 0.95 m |
+| 23 | Switching position hold / stick style in flight | largest set-point step 0.9° |
+| 24 | Height limit 20 m; OFF → 1000 m | stops at 20.19 m; 1000 m reached, telemetry 1001.2 m |
+| 25 | **Gamepad:** resting stick, real push, keys, hidden page | resting at 0.22: 0 m in 60 s; a real push flies; keys override the pad; hidden page = neutral |
+| 26 | **10-minute flights** in wind and gusts (NORMAL, SPORT, noisy) | then holds within 0.25 m; heading offset at most 3.1° |
+| 27 | **Long flight with 70 ms delay + jitter** | holds within 0.12 m |
+| 28 | **Real board link** (real firmware behind a simulated USB link and page) | see below |
+| 29 | **FAILED recovery** | wind 40 m/s trips it; tries again after 4.8 s; holds within 0.26 m; gives up after 3 in a row |
+| 30 | **Heading offset after hard flying** | ANGLE + SPORT brake from 26 m/s: 0.13°; 15 min of SPORT: 0.5° |
+| 31 | **Gyro noise and drift switched on in flight** | see below |
+| 32 | OLED help + motor readings | 106 help texts fit the display; OLED motor % = simulator's |
+| 33 | **Landing with the stick** | ECO, NORMAL and SPORT from 1.5 m, SPORT from 20 m, half stick, wind 3 m/s, position hold off: touches at 0.19–0.25 m/s, 0.17 m sideways at most (wind), bounce 0.03 m, lowest motor 60 %, motors stop; stick released at 0.6 m: keeps flying |
+| 34 | **Left stick with a wobbling thumb** | heading 0.0°, 0.00 m sideways; a real diagonal still does both |
+| 35 | **Page says if commands reach the flight controller** | every banner message; launchers open Gazebo mode; `127.0.0.1`; throttle card from real telemetry; command count goes to 0 when commands stop |
 
-**Extra measurement (GPS-aided attitude):** over a 40 s sequence of aggressive manoeuvres in different directions, the attitude-estimate error is **0.95° RMS / 2.2° max with GPS aid**, against **3.35° RMS / 5.4° max without**.
+**Scenario 28, control delay:** the drone is steady up to about 80 ms of delay. At 100 ms it wobbles (42° of tilt), and above that it crashes. The page therefore never lets the physics run more than 70 ms ahead of the board:
 
-**Limits of this validation:**
-- The replica is built from the simulator's `model.sdf` and plugin parameters, not from Gazebo itself. A run in the real Gazebo (docs/08) is still the final check.
-- The real board's OLED, buttons, flash and USB timing have not been tested (the board arrives tomorrow).
+| USB delay, drawing time | Tilt | Hold | Simulation speed |
+|---|---|---|---|
+| 5 ms, 10 ms | 2.5° | 0.14 m | 1.00× |
+| 5 ms, 60 ms | 2.6° | 0.09 m | 1.00× |
+| 50 ms, 30 ms | 2.5° | 0.08 m | 1.00× |
+| 100 ms, 10 ms | 2.6° | 0.12 m | 0.61× |
+| 150 ms, 30 ms | 2.8° | 0.19 m | 0.41× |
+| 300 ms, 30 ms | 3.2° | 0.30 m | 0.20× |
+
+**Scenario 31, gyro faults switched on in flight (moved in 60 s):**
+
+| Fault | Hold ON: before fix → now | Hold OFF: before fix → now |
+|---|---|---|
+| Noise 2 °/s | 0.4 → **0.2 m** | 9.8 → **2.8 m** |
+| Drift 1 °/s | 1.3 → **0.5 m** | 209 → **30 m** |
+| Drift 3 °/s | **crash, 708 m** → **1.6 m** | 541 → **90 m** |
+
+With position hold OFF nothing brings the drone back, so it still travels while the filter learns the drift (about 10 s). Keep position hold ON.
+
+**2-hour flight** (random flying, wind 3 m/s + gusts, sensor noise and gyro bias): holds within 0.36 m at every check, never FAILED, no worsening with time. Heading offset: below 1° after the first half hour, 4.3° at worst during it.
+
+## D. Firmware build
+
+`tools\check_firmware.bat`: compiles for the UNO R4 Minima with **0 warnings** in our code, about 112.3 KB flash (42 %) and 15 KB RAM (46 %).
+
+## Not tested by me (needs you)
+
+- **The OLED and buttons.** I can't see your display. The drawing code is tested on the virtual OLED, and the real board runs without errors. Please look at it: SYSTEM page, POSITION page, MOTORS page, hold BACK for help.
+- **Your real gamepad.** Tested with a fake gamepad. If a stick rests beyond 0.25, card 3 shows a red warning.
+- **The page's "Connect Arduino R4" button.** Web Serial needs your click in the browser's port chooser, so I used a test relay with the same page code path. Please try it once.
+- **`gazebo\2_ARDUINO_to_Ubuntu.bat`'s permission step.** The board was already shared, so I ran only its attach command. Launcher 3 is tested (A0).
+- **The banner and keys in your real Edge window,** in split screen. I flew from the app's browser pane with the same page. Check that the banner turns green, and click the page once.

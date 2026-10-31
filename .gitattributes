@@ -1,0 +1,9 @@
+# Ubuntu needs Linux line ends in its scripts, Windows needs Windows line ends in its batch files.
+*.sh  text eol=lf
+*.py  text eol=lf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# ready-made programs: the simulator page and Ubuntu run these without a compiler
+*.wasm binary
+tools/sitl/aerofc_sitl binary

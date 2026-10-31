@@ -2,7 +2,8 @@
 let modulePromise = null;
 
 export function loadFcModule(url = new URL("../fc.wasm", import.meta.url)) {
-  if (!modulePromise) modulePromise = fetch(url).then((r) => {
+  // "no-cache": always ask the server whether fc.wasm changed (a rebuilt firmware must never run an old copy)
+  if (!modulePromise) modulePromise = fetch(url, { cache: "no-cache" }).then((r) => {
     if (!r.ok) throw new Error("cannot load fc.wasm (" + r.status + ")");
     return r.arrayBuffer();
   }).then((b) => WebAssembly.compile(b));
@@ -73,7 +74,7 @@ export class WasmFc {
   cmd(code, nowUs) { return this.x.fc_cmd(code, nowUs >>> 0); }
   info() {
     this.x.fc_info();
-    return new Float32Array(this.x.memory.buffer.slice(this.infoPtr, this.infoPtr + 64 * 4));
+    return new Float32Array(this.x.memory.buffer.slice(this.infoPtr, this.infoPtr + 80 * 4));
   }
   paramCount() { return this.x.fc_param_count(); }
   paramName(i) {
@@ -84,6 +85,17 @@ export class WasmFc {
   }
   param(i) { return this.x.fc_param_get(i); }
   setParam(i, v) { this.x.fc_param_set(i, v); }
+  cstr(ptr) {
+    const m = this.mem();
+    let e = ptr;
+    while (m[e]) e++;
+    return new TextDecoder().decode(m.slice(ptr, e));
+  }
+  helpTexts() {
+    const out = [];
+    for (let i = 0; i < this.x.fc_help_count(); i++) out.push({ title: this.cstr(this.x.fc_help_title(i)), text: this.cstr(this.x.fc_help_text(i)) });
+    return out;
+  }
   paramIndex(name) { for (let i = 0; i < this.paramCount(); i++) if (this.paramName(i) === name) return i; return -1; }
   set(name, v) { const i = this.paramIndex(name); if (i < 0) throw new Error("no param " + name); this.setParam(i, v); }
   get(name) { return this.param(this.paramIndex(name)); }

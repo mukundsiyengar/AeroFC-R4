@@ -1,22 +1,24 @@
-// fc_wasm_api.cpp - exports the UNMODIFIED firmware core (firmware/AeroFC_R4/src/core) as a WebAssembly module,
+// fc_wasm_api.cpp - exports the UNMODIFIED firmware core (firmware/AeroFC_R4_v2/src/core) as a WebAssembly module,
 // so the browser simulator flies exactly the code that runs on the Arduino.
 #include <string.h>
-#include "../../firmware/AeroFC_R4/src/core/fc_app.h"
-#include "../../firmware/AeroFC_R4/src/core/ui_menu.h"
+#include "../../firmware/AeroFC_R4_v2/src/core/fc_app.h"
+#include "../../firmware/AeroFC_R4_v2/src/core/ui_menu.h"
 
 static FcApp app;
 static UiMenu ui;
+static UiPlatform plat;
 static unsigned char inBuf[2048];
 static unsigned char outBuf[2048];
 static unsigned char fb[1024];
 static unsigned char settingsBuf[1024];
-static float info[64];
+static float info[80];
 
 #define EXPORT(n) extern "C" __attribute__((export_name(n)))
 
 EXPORT("fc_init") void fc_init() {
   app.init();
-  ui.init(&app);
+  plat.resetCause = "simulator";
+  ui.init(&app, &plat);
 }
 EXPORT("fc_in_ptr") unsigned char *fc_in_ptr() { return inBuf; }
 EXPORT("fc_out_ptr") unsigned char *fc_out_ptr() { return outBuf; }
@@ -42,6 +44,10 @@ EXPORT("fc_poll") int fc_poll(unsigned int nowUs) {
 EXPORT("fc_button") void fc_button(int btn, int evt, unsigned int nowUs) { ui.onButton((uint8_t)btn, (uint8_t)evt, nowUs); }
 // renders into fb (SSD1306 page layout: 8 pages x 128 columns, LSB = top pixel); returns 1 if it changed
 EXPORT("fc_render") int fc_render(unsigned int nowUs) { return ui.render(fb, nowUs) ? 1 : 0; }
+// help texts (for the automated "everything fits on the OLED" test)
+EXPORT("fc_help_count") int fc_help_count() { return UiMenu::helpCount(); }
+EXPORT("fc_help_title") const char *fc_help_title(int i) { return UiMenu::helpTitle(i); }
+EXPORT("fc_help_text") const char *fc_help_text(int i) { return UiMenu::helpTextAt(i); }
 
 // ---- settings: the browser keeps them in localStorage
 EXPORT("fc_settings_pack") int fc_settings_pack() { return (int)app.packSettings(settingsBuf, sizeof(settingsBuf)); }
@@ -61,14 +67,14 @@ EXPORT("fc_save_done") void fc_save_done(int ok) {
   app.lastSaveResult = (int8_t)ok;
 }
 
-// ---- parameters (for the simulator's tuning panel)
+// ---- parameters (for the simulator's panels)
 EXPORT("fc_param_count") int fc_param_count() { return paramsCount(); }
 EXPORT("fc_param_get") float fc_param_get(int i) { return paramGet(app.params, i); }
 EXPORT("fc_param_set") void fc_param_set(int i, float v) { paramSet(app.params, i, v); }
 EXPORT("fc_param_name") const char *fc_param_name(int i) { return paramDef(i).name; }
 EXPORT("fc_param_group") int fc_param_group(int i) { return paramDef(i).group; }
 
-// ---- commands from the simulator panel
+// ---- commands from the simulator panel (same codes as the pilot extension)
 EXPORT("fc_cmd") int fc_cmd(int code, unsigned int nowUs) {
   switch (code) {
     case 10: return app.core.cmdArm(nowUs);
@@ -100,4 +106,12 @@ EXPORT("fc_info") void fc_info() {
   o[44] = c.homeNorth; o[45] = c.homeEast; o[46] = c.ekf.accRejects; o[47] = c.ekf.magRejects;
   o[48] = c.sensorsOk ? 1.0f : 0.0f; o[49] = c.geofence ? 1.0f : 0.0f;
   o[50] = c.gpsAidOk ? 1.0f : 0.0f; o[51] = c.aidYawOffset;
+  // position hold
+  o[52] = c.posReady ? 1.0f : 0.0f; o[53] = c.posActive ? 1.0f : 0.0f; o[54] = (float)c.posState;
+  o[55] = c.posFailed ? 1.0f : 0.0f;
+  o[56] = c.pos.kn.p; o[57] = c.pos.ke.p; o[58] = c.pos.kn.v; o[59] = c.pos.ke.v;
+  o[60] = c.posCtl.holdN; o[61] = c.posCtl.holdE; o[62] = c.posCtl.dist;
+  o[63] = c.posCtl.iN; o[64] = c.posCtl.iE; o[65] = c.posCtl.vSpN; o[66] = c.posCtl.vSpE;
+  o[67] = c.pos.sigma(); o[68] = c.ceilingAbs; o[69] = c.atCeiling ? 1.0f : 0.0f;
+  o[70] = app.params.speedMode; o[71] = c.groundAlt;
 }

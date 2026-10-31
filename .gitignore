@@ -1,0 +1,17 @@
+# build output
+build/
+__pycache__/
+*.pyc
+
+# flight logs and recordings
+*.log
+aerofc_flight_*.csv
+aerofc_status_*.csv
+hil_flight_*.csv
+
+# editor and system files
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.DS_Store

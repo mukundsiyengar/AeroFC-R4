@@ -3,7 +3,7 @@ import { QuadX3 } from "./physics_x3.js";
 import { BridgeReplica } from "./bridge_replica.js";
 import { WasmFc } from "./fc_wasm.js";
 
-export const CODES = { ARM: 10, DISARM: 11, TAKEOFF: 12, LAND: 13, KILL: 16 };
+export const CODES = { ARM: 10, DISARM: 11, TAKEOFF: 12, LAND: 13, KILL: 16, ECO: 17, NORMAL: 18, SPORT: 19, POSHOLD: 20, STICK: 21 };
 const DT = 0.001;
 
 export class SimEngine {
@@ -20,6 +20,8 @@ export class SimEngine {
     this.pilot = { thr: 2.5, roll: 0, pitch: 0, yaw: 0 };
     this.pilotMode = "extended";   // "extended" = our 25 Hz stream, "stock" = like control_input.py (on change only), "off"
     this.pilotCodes = [];
+    this.lockstepS = 0;        // real board: the physics may run at most this far ahead of its last answer (0 = off)
+    this.rcCut = false;        // simulated transmitter failure: no pilot packets at all
     this.nextPilot = 0;
     this.lastStockSent = null;
     this.stepHooks = [];
@@ -41,11 +43,20 @@ export class SimEngine {
   // bytes from a real board
   serialReceived(bytes) { this.bridge.receive(bytes); }
 
+  // The real board answers over USB, and the page may be busy drawing. Physics that runs on meanwhile flies with old
+  // motor commands, and above ~90 ms of that the drone gets unstable. So it waits for the board: the simulation then
+  // runs a little slower than real time, and the drone doesn't notice. No answer at all: time goes on, the failsafes work.
+  waitingForBoard(wallMs) {
+    const b = this.bridge;
+    if (!this.serial || !this.lockstepS || b.answeredT === null || !b.running) return false;
+    return this.t - b.answeredT >= this.lockstepS && wallMs - b.answerWall < 500;
+  }
+
   setPilot(p) { Object.assign(this.pilot, p); }
   command(code) { for (let i = 0; i < 3; i++) this.pilotCodes.push(code); }
 
   servicePilot() {
-    if (this.pilotMode === "off" || !this.bridge.running) return;
+    if (this.pilotMode === "off" || this.rcCut || !this.bridge.running) return;
     if (this.t < this.nextPilot) return;
     this.nextPilot = this.t + 1 / this.opts.pilotRateHz;
     const p = this.pilot;
@@ -97,9 +108,9 @@ export class SimEngine {
     return -1;
   }
 
-  info() {
-    if (!this.fc) return null;
-    const a = this.fc.info();
+  info(fc = this.fc) {
+    if (!fc) return null;
+    const a = fc.info();
     const d = 180 / Math.PI;
     let yaw = a[2] * d; if (yaw < 0) yaw += 360;
     let ht = a[9] * d; if (ht < 0) ht += 360;
@@ -113,6 +124,11 @@ export class SimEngine {
       crashed: a[36] > 0.5, streamSeen: a[37] > 0.5, linkLost: a[38] > 0.5, crcErrors: a[39], tilt: a[40],
       txActuators: a[41], txHeartbeats: a[42], rxImu: a[43], north: a[44], east: a[45],
       accRejects: a[46], magRejects: a[47], sensorsOk: a[48] > 0.5, geofence: a[49] > 0.5,
+      gpsAid: a[50] > 0.5, yawOffset: a[51] * d,
+      posReady: a[52] > 0.5, posActive: a[53] > 0.5, posState: a[54], posFailed: a[55] > 0.5,
+      posN: a[56], posE: a[57], velN: a[58], velE: a[59], holdN: a[60], holdE: a[61], holdDist: a[62],
+      windN: a[63], windE: a[64], vSpN: a[65], vSpE: a[66], posSigma: a[67], ceiling: a[68], atCeiling: a[69] > 0.5,
+      speedMode: a[70], groundAlt: a[71],
     };
   }
 }

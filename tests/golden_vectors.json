@@ -1,5 +1,5 @@
 {
- "source": "uav-hil-simulator-main\\uav-hil-simulator-main\\arduino_hil\\hil_protocol.py",
+ "source": "uav-hil-simulator-main/arduino_hil/hil_protocol.py",
  "packets": [
   {
    "type": 1,

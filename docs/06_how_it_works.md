@@ -1,7 +1,7 @@
 # 6. How it works (a beginner's tour of the flight code)
 
 ```
- simulator (Gazebo)          Arduino UNO R4  (firmware/AeroFC_R4/src/core)
+ simulator (Gazebo)          Arduino UNO R4  (firmware/AeroFC_R4_v2/src/core)
  ───────────────────         ───────────────────────────────────────────────────────────────────────────
  IMU  BARO  MAG  GPS  ──USB──► hil_protocol ─► sensors ─► ahrs_ekf (roll, pitch, yaw)  ─┐
  every 20 ms                   (packets, CRC)  (FLU->FRD,   alt_ekf  (height, climb)    ├─► flight_core ─► controllers ─► mixer ─┐
@@ -90,6 +90,7 @@ This gives a climb rate without the lag and noise of differentiating the baromet
   - The integrator **is** the learned hover thrust (shown as "Hover cmd").
   - Dividing by cos(tilt) keeps the height when tilting.
 - **Take-off:** the height target rises at 0.8 m/s and brakes before 1.5 m (overshoot about 0.1 m).
+- **Going down by stick:** the wanted speed is limited to 0.6 m/s per metre of height (never below "Land low", 0.25 m/s) and builds up at 1.5 m/s². With the stick still down, the same touch-down test as a landing stops the motors (low, not moving, thrust below hover, for 0.8 s).
 
 ## 6. Mixer (`controllers.cpp`)
 
@@ -116,10 +117,10 @@ The Gazebo X3 motor order: 0 front-right (CCW), 1 rear-left (CCW), 2 front-left 
 
 ```
 DISARMED --arm (checks OK)--> IDLE --take-off / climb stick / START--> TAKEOFF --at height--> FLYING (ALT HOLD | MANUAL)
-   ^                           |                                                                 |
-   |                    15 s no take-off                                                         | land command
-   |                           v                                                                 v
-   +------ touch-down (auto-disarm) <--------------------------------------------------- LANDING / FAILSAFE
+   ^                           |                                                              |        |
+   |                    15 s no take-off                                 touch-down, stick down |        | land command
+   |                           v                                                              |        v
+   +------ touch-down (auto-disarm) <-------------------------------------------------------+--- LANDING / FAILSAFE
    +------ KILL / STOP / crash / sensors lost  (motors off immediately)
 ```
 
@@ -147,14 +148,54 @@ The official v1 protocol, byte-identical to `hil_protocol.py`; the test "Protoco
 | 0 < t ≤ 1 | manual throttle (stock meaning; 0.66 ≈ hover) |
 | 2.0 … 3.0 | altitude hold with climb stick: (t − 2.5) × 2 = −1 … +1 |
 | 10 / 11 / 12 / 13 / 16 | ARM / DISARM / TAKEOFF / LAND / KILL (sent 3 times, acted on once) |
+| 17 / 18 / 19 | speed mode ECO / NORMAL / SPORT |
+| 20 / 21 | position hold on/off, stick style SPEED/ANGLE (toggle) |
 
 The pilot-link failsafe only becomes active after a continuous stream of at least 10 Hz in the extended format has been seen. The stock tool only sends on key presses, and its silence must not trigger a landing.
 
-**STATUS telemetry** (type 0x25, 48 bytes, 20 Hz): the layout is in `src/core/telemetry.h`. The official bridge ignores it. Our simulator, `bridge_plus.py` and the D1 telemetry port decode it for the live plots.
+**STATUS telemetry** (type 0x25, version 2: 66 bytes, 20 Hz; float altitude so 1000 m fits, plus position, speed, hold state, speed mode and heading offset): the layout is in `src/core/telemetry.h`.
+
+**Motor packets carry the timestamp of the sensor packet they answer** (the official bridge doesn't read it). So our page measures the control delay exactly, even with several packets on their way. The official bridge ignores it. Our simulator, `bridge_plus.py` and the D1 telemetry port decode it for the live plots.
 
 ## 9. Timing
 
 - One control step per IMU packet: about 50 Hz, the rate the simulator sends.
 - `dt` comes from the packets' own timestamps (clamped 2–100 ms). Gaps over 60 ms make the EKF less confident.
-- The OLED is redrawn 5 times a second. Only changed pages are sent, in 1.5 ms chunks, and only when no USB data is waiting, so the display never delays a control step.
-- A **watchdog** resets the board if the program ever hangs for 2 s. The OLED then shows "WATCHDOG RESET!".
+- The OLED is redrawn up to 25 times a second when nothing else is busy. Data goes out in 32-byte chunks, and only when no USB data is waiting, so the display never delays a control step. After any I2C error the driver pauses, restarts the bus and redraws (self-repair).
+- **Delay limit:** the control loops stay steady up to about 80 ms of delay; at 100 ms the drone wobbles up to 50° of tilt, and above that it crashes. With a real board on our page, delay comes from USB plus the page being busy drawing. So the page lets the physics run at most **70 ms** ahead of the board's last answer (the simulation runs slower instead), and it rations its drawing (3D 30 times a second, plots 15, panels 10). If the board stops answering, time goes on after 0.5 s so the failsafes work. Measured with the real firmware behind a simulated USB link: USB 100 ms went from 44° of tilt to 2.6°, and USB 150 ms from a crash to 2.7°. The official bridge doesn't wait, but its round trip is far below the limit (Gazebo test: docs/11).
+- A **watchdog** (1 s) resets the board if the program hangs, but **only while armed**: starting it at power-up blocked the Arduino IDE's own USB restart and caused v1's reset loop (docs/03). The SYSTEM page shows the reset cause; "WDT HANG!" means a real hang in flight.
+
+## 10. Position hold (`position.cpp`, `flight_core.cpp`)
+
+**Where am I?** Two small Kalman filters (north and east), each with three states:
+- position
+- speed
+- the IMU's acceleration error
+
+They are driven by the IMU acceleration (rotated to the ground frame by the EKF attitude) and corrected by each new GPS fix. The GPS updates 10 times a second; the IMU fills in between. The filter measures how noisy the GPS is and trusts it accordingly.
+
+**GPS-aided attitude:** the filter's "IMU acceleration error" is mostly a small attitude error (1° of tilt = 0.17 m/s²). The EKF is nudged towards "IMU acceleration − error", so accelerating or braking never fools the horizon. This works with Gazebo's clean GPS and with a noisy one.
+
+**A gyro that starts drifting in flight:** the attitude slowly goes wrong, the IMU acceleration stops matching the GPS, the filter sees that error, and the EKF corrects the attitude and learns the drift within about 10 s. With a clean GPS it reacts fast; with a noisy GPS it reacts slowly on purpose, so it doesn't follow the noise. The correction is limited in size but never switched off: switching it off on a large error is what made a 3°/s drift crash the drone.
+
+**Compass vs GPS north:** a third small filter learns the angle between the compass frame and the GPS frame, by comparing how the IMU and the GPS see the same acceleration.
+- A big error (the first manoeuvre with a wrong compass) is measured directly and corrected once the angle has stayed steady for 0.5 s.
+- It learns only when the measurement can be trusted. The GPS moves in 10 Hz steps (2.5 m at 25 m/s), so a faster drone needs a stronger signal; above 15 m/s or while rotating fast it doesn't learn at all. Without this, 15 minutes of SPORT flying taught a wrong offset of up to 31°; now it stays below 1°.
+- While the acceleration is turning, the IMU and GPS readings being a little apart in time makes the angle look wrong by up to 30° with no compass error at all. So those samples count for nothing unless the angle is over 35°, and the fine filter doesn't learn during a fast turn.
+- Gazebo's compass is 90.8° off, which is why **Mag decl** is 90.8.
+
+**The controller** (a cascade, like the attitude loops):
+
+```
+hold point --(Pos P)--> wanted speed --(Vel P + Vel I)--> wanted acceleration --> tilt (pitch / roll set-points)
+```
+
+- **Vel I** learns the steady push of the wind: in 8 m/s wind it leans into the wind and stays on its spot.
+- **SPEED sticks:** the stick sets the wanted speed directly (rotated from the nose direction to north/east).
+- **ANGLE sticks:** the stick sets the tilt (like v1).
+- **Let go:** BRAKING (wanted speed 0, braking tilt limited by the speed mode). Below 0.4 m/s → HOLDING at the point where it stopped. It doesn't spring back to where you let go.
+- **Below 1 m height** the tilt is limited to 10°, so take-off and landing are gentle.
+- **Safety:** if it is far away and keeps getting further for 3 s, position hold switches itself off (FAILED). After 5 s it tries again (brake, then hold where it stops), because this low-drag drone would otherwise slide away for ever. After 3 failures in a row it waits for the next arm.
+- **Not ready** (no GPS, GPS frozen, no compass): it falls back to angle flying, blended over 0.7 s so there is no jump.
+
+**Height limit:** the climb-rate set-point is limited so the drone brakes at 1 m/s² before the ceiling (take-off altitude + Max alt) and stops there.

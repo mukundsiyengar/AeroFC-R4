@@ -3,8 +3,8 @@ rem Runs the automated flight tests in a hidden Edge window and prints PASS / FA
 rem (Same tests as simulator\tests.html, which you can also open in the browser.)
 setlocal
 cd /d "%~dp0.."
-set PORT=8766
-start "aerofc-test-server" /min python -m http.server %PORT% --bind 127.0.0.1
+set PORT=8768
+start "aerofc-test-server" /min python tools\serve.py %PORT%
 timeout /t 2 /nobreak >nul
 set EDGE="%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe"
 if not exist %EDGE% set EDGE="%ProgramFiles%\Microsoft\Edge\Application\msedge.exe"

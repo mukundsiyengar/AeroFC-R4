@@ -3,14 +3,16 @@
 ## Night before
 
 - [ ] `tools\check_firmware.bat` → COMPILE OK. Upload the final firmware.
-- [ ] `tools\run_tests_headless.bat` → ALL PASS 12/12. Screenshot `simulator/tests.html` for your presentation.
-- [ ] Fly the board in the Windows simulator: take-off, roll/pitch/yaw, climb, land. Record a CSV log ("Record log").
-- [ ] If you did the WSL setup, fly once in the real Gazebo (docs/08).
+- [ ] `tools\run_tests_headless.bat` → ALL PASS 35/35. Screenshot `simulator/tests.html` for your presentation.
+- [ ] Fly the board in the Windows simulator: take-off, roll/pitch/yaw, climb, let go (position hold), RC link test, land. Record a CSV log ("Record log").
+- [ ] Fly once in the real Gazebo: `gazebo\4_FLY_SOFTWARE_FC_in_Gazebo.bat` (no board), then with the board (launchers 2 and 3). See docs/08.
 - [ ] **MENU → Storage → Save settings**, and check "Boot: saved" after a power cycle.
+- [ ] With the Arduino IDE open, the OLED keeps running and SYSTEM shows **Reset: power-on** (the v1 reset loop is gone).
 - [ ] Charge the laptop. Pack the USB-C data cable, a spare cable, the board with OLED/buttons, the gamepad, and the USB-TTL adapter if you have one.
 
 ## At the organisers' PC
 
+0. **Close our simulator page** if it is open and connected to the same bridge: it would be a second pilot.
 1. **Plug the Arduino in first**, then they start Gazebo and the bridge (`hil_bridge_v1.py --port /dev/ttyACM0`). The bridge says HELLO only once at start-up.
 2. OLED: **PC: HANDSHAKE**, then **RUNNING**. The bridge prints `HELLO_ACK received … HIL session started`.
 3. The drone **takes off to 1.5 m by itself** and hovers (altitude-hold take-off, as the problem statement asks).
@@ -18,8 +20,9 @@
    - roll right, pitch forward/back, yaw both ways
    - the drone holds height and heading when the sticks are centred
    - **If forward/back is reversed** with their tool: **MENU → Input → Inv pitch → ON** (and roll/yaw likewise). No upload needed.
-5. Show the OLED pages: ATTITUDE, ALTITUDE, MOTORS, RC INPUT, SYSTEM (sensor rate, µs per step, CRC errors 0).
-6. Land: there is no "land" key in their tool. Use **MENU → Flight → Land** on the board, or hold SELECT on the dashboard (it lands if flying).
+5. Let go of the sticks: it brakes and **holds its position** (POSITION page: HOLDING, distance in cm).
+6. Show the OLED pages: ATTITUDE, ALTITUDE, POSITION, MOTORS, RC INPUT, SYSTEM (sensor rate, µs per step, CRC errors 0). Hold BACK on a menu line to show the built-in help.
+7. Land: there is no "land" key in their tool. Use **MENU → Flight → Land** on the board, or hold SELECT on the dashboard (it lands if flying).
 
 ## Live plots on event day ("real-time plotting of RC inputs, attitude, altitude")
 
@@ -42,6 +45,16 @@
   - altitude → climb rate → thrust with hover learning and tilt compensation
   - heading hold
   - thrust-linearized mixer with saturation priority
-- **Safety:** arming checks, failsafe landing, crash detection, watchdog, ceiling.
+- **Position hold:**
+  - GPS/IMU Kalman filter, and a position → speed → tilt cascade that learns the wind.
+  - Brakes and holds its spot within centimetres, and leans into 8 m/s wind.
+  - Learns a wrong compass in flight.
+  - Speed modes ECO / NORMAL / SPORT.
+- **Safety:**
+  - arming checks
+  - RC-loss failsafe (land on the spot or hover)
+  - crash detection
+  - watchdog (only while armed)
+  - optional height limit up to 1 km
 - **Interoperability:** byte-identical to the official protocol (tested against packets made by their own code). Works with their unmodified bridge and keyboard tool.
-- **Validation:** 12 automated closed-loop scenarios with metrics (docs/11), including robustness to delay, sensor rate, inertia, noise, bias and wind.
+- **Validation:** 35 automated closed-loop scenarios with metrics, a 2-hour endurance run, and the real R4 in the real Gazebo (over 10 minutes of flying, then holds within 0.14 m) with the same firmware code built for Linux (docs/11).

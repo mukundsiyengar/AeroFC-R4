@@ -1,0 +1,109 @@
+// params.h - every tunable number of the flight controller in ONE place.
+//
+// The same table drives: the OLED menu (names, limits, step size, HELP TEXT), flash storage (the struct is saved
+// as-is) and the simulator.  To add a parameter: add a field to Params, give it a default in paramsDefaults()
+// and add a row to the table in params.cpp.  Bump PARAMS_VERSION when you change the layout.
+#pragma once
+#include <stdint.h>
+
+static const uint16_t PARAMS_VERSION = 6;
+
+enum ParamGroup : uint8_t {
+  PG_MODES = 0, PG_RATE, PG_ANGLE, PG_POSITION, PG_ALT, PG_FEATURES, PG_FAILSAFE, PG_INPUT, PG_MOTOR, PG_ESTIMATOR,
+  PG_LOOP, PG_SENSOR, PG_COUNT
+};
+
+enum ParamKind : uint8_t { PK_FLOAT = 0, PK_BOOL, PK_ENUM };
+
+enum FailsafeAction : uint8_t { FS_LAND = 0, FS_HOLD = 1, FS_NONE = 2 };   // what to do when the pilot link is lost
+enum LoopMode : uint8_t { LOOP_SYNC = 0, LOOP_100HZ = 1, LOOP_200HZ = 2 };
+enum SpeedMode : uint8_t { SPEED_ECO = 0, SPEED_NORMAL = 1, SPEED_SPORT = 2 };
+enum PosStick : uint8_t { STICK_SPEED = 0, STICK_ANGLE = 1 };
+
+// Limits of each speed mode (like DJI Cine / Normal / Sport)
+struct SpeedProfile {
+  float maxSpeed;      // m/s, full stick with SPEED sticks
+  float maxTiltDeg;    // full stick with ANGLE sticks
+  float brakeTiltDeg;  // most tilt position hold may use
+  float climb;         // m/s, full climb stick
+  float descent;       // m/s, full descend stick
+  float yawRateDps;    // full yaw stick
+};
+
+struct Params {
+  // --- flight modes
+  float speedMode;         // SpeedMode
+  float posHoldOn;         // GPS position hold
+  float posStick;          // PosStick
+  float altHoldOn, headingHoldOn;
+  // --- rate loop (inner): output = normalized torque per rad/s of error
+  float rollP, rollI, rollD;
+  float pitchP, pitchI, pitchD;
+  float yawP, yawI;
+  float dCutHz;            // D-term low-pass cutoff
+  float rateILimit;        // integrator limit (normalized torque)
+  // --- angle loop (outer)
+  float angleP;            // rad/s per rad of angle error
+  float maxRateDps;        // limit of the angle loop's rate request
+  float headingP;          // rad/s per rad of heading error
+  // --- position hold
+  float posP;              // m/s per m of position error
+  float velP;              // m/s^2 per m/s of speed error
+  float velI;              // m/s^2 per m (integral, learns the wind)
+  // --- altitude
+  float altP;              // m/s per m
+  float climbP;            // m/s^2 per m/s
+  float climbI;            // m/s^2 per m (integral of climb-rate error)
+  float hoverCmd;          // motor command that hovers (learned in flight); 0.66 for the Gazebo X3
+  float takeoffAlt, takeoffSpeed, landSpeed, landSpeedLow, landSpeedHigh;
+  float altLimitOn;        // height ceiling on / off
+  float maxAlt;            // ceiling above the take-off point (m)
+  // --- features (0 / 1)
+  float compassOn, crashDetectOn, autoTakeoffOn, telemetryPortOn;
+  // --- failsafe
+  float fsAction;          // FailsafeAction
+  float pilotTimeout;      // s without pilot packets (only once a stream was seen)
+  float crashTiltDeg;
+  float idleDisarmS;       // armed on the ground without taking off -> disarm
+  // --- pilot input
+  float invRoll, invPitch, invYaw;
+  float expo, deadband;
+  // --- motors
+  float motorMax;          // command sent for "full thrust" (1.0 for the 1000 rad/s Gazebo world)
+  float motorIdle;         // command while armed on the ground
+  // --- estimator
+  float ekfGyroNoise;      // rad/s
+  float ekfAccNoiseFlight; // m/s^2  (bigger = trust accelerometer less in flight)
+  float magDeclDeg;        // added to the compass heading
+  float baroNoise;         // m
+  float gpsAidOn;          // use GPS acceleration to keep the horizon right while accelerating
+  // --- loop
+  float loopMode;          // LoopMode
+  // --- sensor profile ("board sensitivity"): emulate a real IMU's full scale and resolution
+  float sensProfileOn;
+  float gyroFsDps;         // 250 / 500 / 1000 / 2000
+  float accFsG;            // 2 / 4 / 8 / 16
+};
+
+struct ParamDef {
+  const char *name;        // <= 9 characters, shown on the OLED
+  uint16_t offset;         // byte offset inside Params
+  float minV, maxV, step;
+  uint8_t group;           // ParamGroup
+  uint8_t kind;            // ParamKind
+  uint8_t decimals;
+  const char *const *enumNames;  // for PK_ENUM
+  const char *help;        // one or two sentences, shown on the OLED
+};
+
+void paramsDefaults(Params &p);
+void paramsSanitize(Params &p);           // clamp everything into range (used after loading from flash)
+int paramsCount();
+const ParamDef &paramDef(int i);
+int paramIndexOf(uint16_t offset);        // -1 if not found
+float paramGet(const Params &p, int i);
+void paramSet(Params &p, int i, float v);  // clamps to range
+const char *paramGroupName(uint8_t g);
+const char *paramGroupHelp(uint8_t g);
+const SpeedProfile &speedProfile(const Params &p);
+const char *speedModeName(uint8_t m);

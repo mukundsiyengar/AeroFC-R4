@@ -12,6 +12,7 @@
   <div id="modeLabel" class="mode">-</div>
   <a class="help" href="#help">Controls</a>
 </header>
+<div id="linkBanner" class="banner" style="display:none"><span id="linkText"></span><button id="linkAction" class="small">Connect to Gazebo</button></div>
 
 <main>
   <aside class="side">
@@ -25,7 +26,7 @@
         <summary>More connections</summary>
         <button id="btnTelemetry">Telemetry only (USB-TTL on D1)</button>
         <p class="hint">Event day: live plots while the organisers' bridge owns the USB port.</p>
-        <label class="row">Relay <input id="relayUrl" value="http://localhost:8770"></label>
+        <label class="row">Relay <input id="relayUrl" value="http://127.0.0.1:8770"></label>
         <button id="btnGazebo">Gazebo in WSL (relay)</button>
         <p class="hint">Pilot + plots for the official Gazebo simulator (see docs/08).</p>
       </details>
@@ -42,13 +43,38 @@
         <button id="cmdKill" class="danger">KILL (Space)</button>
         <button id="cmdStop" class="ghost">Send STOP</button>
       </div>
-      <p class="hint">After START the flight controller takes off to 1.5 m by itself (setting "Auto TO").</p>
+      <div class="seg" id="speedSeg">
+        <button data-code="17">ECO (1)</button><button data-code="18">NORMAL (2)</button><button data-code="19">SPORT (3)</button>
+      </div>
+      <div class="grid2">
+        <button id="cmdPosHold">Position hold (P)</button>
+        <button id="cmdStick">Stick style (K)</button>
+      </div>
+      <p class="hint">After START the flight controller takes off to 1.5 m by itself (setting "Auto TO").
+        Position hold: let go of the sticks and the drone brakes and stays on its spot, even in wind.</p>
     </section>
 
+    <section class="card" id="thrCard">
+      <h2>Throttle and motors</h2>
+      <div class="kv"><span>Throttle stick</span><b id="thrStick">-</b></div>
+      <div class="thrbar"><i id="thrFill"></i></div>
+      <div class="kv"><span>Climb speed</span><b id="thrClimb">-</b></div>
+      <div class="kv"><span>Power above hover</span><b id="thrPower">-</b></div>
+      <div class="motors">
+        <div class="mot"><span>FL</span><div class="mbar"><i id="mFL"></i></div><b id="mFLv">-</b></div>
+        <div class="mot"><span>FR</span><div class="mbar"><i id="mFR"></i></div><b id="mFRv">-</b></div>
+        <div class="mot"><span>RL</span><div class="mbar"><i id="mRL"></i></div><b id="mRLv">-</b></div>
+        <div class="mot"><span>RR</span><div class="mbar"><i id="mRR"></i></div><b id="mRRv">-</b></div>
+      </div>
+      <p class="hint">About 66 % holds this drone up at any height, because the weight stays the same. The motors only
+        change while the speed up or down is changing, then settle near 66 % again.</p>
+    </section>
     <section class="card">
       <h2>3. Pilot</h2>
       <div class="kv"><span>Input</span><b id="stPilot">keyboard</b></div>
       <div class="kv mono"><b id="stSticks">-</b></div>
+      <div class="kv mono" id="padRawRow" style="display:none"><b id="stPadRaw"></b></div>
+      <p id="stickWarn" class="warn" style="display:none"></p>
       <label class="row">Protocol
         <select id="pilotProto">
           <option value="extended">AeroFC pilot (25 Hz, climb stick)</option>
@@ -57,15 +83,30 @@
       </label>
     </section>
 
+    <section class="card" id="rcCard">
+      <h2>4. RC link test (failsafe)</h2>
+      <button id="rcCutBtn" class="danger">Cut RC link</button>
+      <div class="kv"><span>RC link</span><b id="rcState">connected</b></div>
+      <div class="kv"><span>Failsafe</span><b id="rcFs">-</b></div>
+      <label class="row">If RC is lost
+        <select id="rcAction"><option value="0">LAND on the spot</option><option value="1">HOLD (hover)</option><option value="2">NONE</option></select>
+      </label>
+      <p class="hint" id="rcHint">Simulates a dead transmitter: no pilot packets at all. After "Link t/o" (2 s) the
+        flight controller starts its failsafe. LAND = position hold + slow landing on the spot, then disarm.</p>
+    </section>
+
     <section class="card" id="envPanel">
-      <h2>4. Test conditions</h2>
-      <label class="slider">Wind (m/s) <output id="envWindVal">0</output><input id="envWind" type="range" min="0" max="6" step="0.5" value="0"></label>
+      <h2>5. Test conditions</h2>
+      <label class="slider">Wind (m/s) <output id="envWindVal">0</output><input id="envWind" type="range" min="0" max="10" step="0.5" value="0"></label>
       <label class="slider">Gusts (m/s) <output id="envGustVal">0</output><input id="envGust" type="range" min="0" max="3" step="0.25" value="0"></label>
       <label class="slider">Gyro noise (deg/s) <output id="envGyroNVal">0</output><input id="envGyroN" type="range" min="0" max="2" step="0.1" value="0"></label>
       <label class="slider">Gyro bias (deg/s) <output id="envGyroBVal">0</output><input id="envGyroB" type="range" min="0" max="3" step="0.1" value="0"></label>
       <label class="slider">Accel noise (m/s2) <output id="envAccNVal">0</output><input id="envAccN" type="range" min="0" max="1" step="0.05" value="0"></label>
       <label class="slider">Baro noise (m) <output id="envBaroNVal">0</output><input id="envBaroN" type="range" min="0" max="0.5" step="0.02" value="0"></label>
       <label class="slider">Compass noise (uT) <output id="envMagNVal">0</output><input id="envMagN" type="range" min="0" max="5" step="0.25" value="0"></label>
+      <label class="slider">GPS noise (m) <output id="envGpsNVal">0</output><input id="envGpsN" type="range" min="0" max="1" step="0.05" value="0"></label>
+      <label class="slider">Compass error (deg) <output id="envDeclVal">0</output><input id="envDecl" type="range" min="-45" max="45" step="5" value="0"></label>
+      <label class="row"><input id="envGpsOff" type="checkbox" style="width:auto"> GPS dead (frozen)</label>
       <label class="slider">Extra delay (ms) <output id="envLatVal">0</output><input id="envLat" type="range" min="0" max="60" step="5" value="0"></label>
       <label class="slider">Sensor rate (Hz) <output id="envRateVal">50</output><input id="envRate" type="range" min="20" max="100" step="5" value="50"></label>
       <label class="row">Speed <select id="simSpeed"><option value="0.5">0.5x</option><option value="1" selected>1x real time</option><option value="2">2x</option></select></label>
@@ -84,6 +125,7 @@
       <canvas id="plotYaw"></canvas>
       <canvas id="plotAlt"></canvas>
       <canvas id="plotMot"></canvas>
+      <canvas id="plotPos"></canvas>
       <div class="plotctl"><button id="recBtn">Record log (CSV)</button><span class="hint">Solid = flight controller estimate, dashed = truth from the simulator.</span></div>
     </div>
   </section>
@@ -101,6 +143,17 @@
     <section class="card" id="realOledNote" style="display:none">
       <h2>OLED</h2><p class="hint">The dashboard is on the OLED of your Arduino.</p>
     </section>
+    <section class="card" id="posCard">
+      <h2>Position hold</h2>
+      <div class="kv"><span>Position hold</span><b id="psOn">-</b></div>
+      <div class="kv"><span>State</span><b id="psState">-</b></div>
+      <div class="kv"><span>From hold point</span><b id="psDist">-</b></div>
+      <div class="kv"><span>Speed</span><b id="psSpeed">-</b></div>
+      <div class="kv"><span>Position N / E</span><b id="psNE">-</b></div>
+      <div class="kv"><span>Speed mode / sticks</span><b id="psMode">-</b></div>
+      <div class="kv"><span>Height limit</span><b id="psCeil">-</b></div>
+      <div class="kv" id="psWindRow"><span>Wind it is fighting</span><b id="psWind">-</b></div>
+    </section>
     <section class="card">
       <h2>Flight controller status</h2>
       <div class="kv"><span>State</span><b id="stState">-</b></div>
@@ -111,6 +164,9 @@
       <div class="kv"><span>Estimator</span><b id="stEst">-</b></div>
       <div class="kv"><span>Hover cmd</span><b id="stHover">-</b></div>
       <div class="kv"><span>Bridge</span><b id="stBridge">-</b></div>
+      <div class="kv" id="usbRow" style="display:none"><span>Control delay</span><b id="stUsb">-</b></div>
+      <div class="kv"><span>Estimate vs truth</span><b id="stEstErr">-</b></div>
+      <div class="kv"><span>Heading offset</span><b id="stHeadOff">-</b></div>
     </section>
     <section class="card grow">
       <h2>Bridge log</h2>
@@ -132,6 +188,10 @@
         <tr><td>Enter</td><td>arm / disarm</td></tr>
         <tr><td>T / L</td><td>take-off / land</td></tr>
         <tr><td>M</td><td>manual throttle on/off</td></tr>
+        <tr><td>1 / 2 / 3 (G cycles)</td><td>speed mode ECO / NORMAL / SPORT</td></tr>
+        <tr><td>P</td><td>position hold on/off</td></tr>
+        <tr><td>K</td><td>stick style SPEED / ANGLE</td></tr>
+        <tr><td>Shift (hold)</td><td>full stick instead of 60 %</td></tr>
         <tr><td>Space</td><td>KILL motors</td></tr>
       </table>
     </div>
@@ -145,13 +205,20 @@
         <tr><td>B (O)</td><td>land</td></tr>
         <tr><td>Start (Options)</td><td>arm / disarm</td></tr>
         <tr><td>Y (triangle)</td><td>manual throttle on/off</td></tr>
+        <tr><td>X (square)</td><td>next speed mode ECO / NORMAL / SPORT</td></tr>
+        <tr><td>RB (R1)</td><td>position hold on/off</td></tr>
         <tr><td>hold Back (Share)</td><td>KILL</td></tr>
       </table>
     </div>
     <div>
       <h3>Good to know</h3>
-      <p>The drone holds its height and heading when you let go. It has almost no air drag, so it keeps drifting:
-        steer the other way to stop it, like a DJI drone in ATTI mode.</p>
+      <p><b>Position hold ON</b> (default): let go of the sticks and the drone brakes and stays on its spot, even in
+        wind. SPEED sticks: the stick sets the speed (NORMAL: full stick = 5 m/s). ANGLE sticks: the stick sets the tilt.</p>
+      <p><b>Position hold OFF</b>: it holds height and heading only and keeps drifting like a DJI drone in ATTI mode
+        (it has almost no air drag): steer the other way to stop it.</p>
+      <p><b>Gamepad + keyboard</b>: both work together; a pressed key overrides the gamepad. Gamepad sticks have a 25 %
+        deadzone, because thumbsticks often rest off-centre after use. A red warning appears in card 3 if one still does.</p>
+      <p><b>RC link test</b>: "Cut RC link" stops all pilot packets. After 2 s the failsafe lands it on the spot.</p>
       <p>Press a key once on the page if the keyboard seems dead (the page needs focus).
         Gamepads appear after you press a button on them.</p>
       <p><a href="tests.html">Run the automated flight tests</a></p>

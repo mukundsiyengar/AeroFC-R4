@@ -4,7 +4,7 @@ OFFICIAL, unmodified hil_bridge_v1.py is running.  It receives pilot lines over 
 bridge's control pipe /tmp/hil_control_input, exactly like the official control_input.py does.
 
     python3 relay.py            (in the Ubuntu window, while hil_bridge_v1.py runs)
-Then in the simulator page: More connections -> Relay http://localhost:8770 -> "Gazebo in WSL".
+Then in the simulator page: More connections -> Relay http://127.0.0.1:8770 -> "Gazebo in WSL".
 (Live plots need bridge_plus.py instead of the official bridge; relay.py only carries the pilot input.)
 """
 import errno
@@ -87,5 +87,5 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    print(f"AeroFC relay: http://localhost:{PORT}/control  ->  {PIPE}", flush=True)
+    print(f"AeroFC relay: http://127.0.0.1:{PORT}/control  ->  {PIPE}", flush=True)
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()

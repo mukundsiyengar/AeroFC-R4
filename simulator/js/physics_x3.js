@@ -18,7 +18,9 @@ export const X3 = {
   maxRotVelocity: 1000.0, rotorDragCoefficient: 8.06428e-05, rollingMomentCoefficient: 1e-06,
   gravity: 9.8,                         // SDF default gravity
   box: [0.47, 0.47, 0.11],              // base_link collision box
-  magneticField: [6e-6, 2.3e-5, -4.2e-5],   // world (ENU), Tesla
+  // what Gazebo's magnetometer really reports (measured in gz-sim 8): its world-model field (NED, gauss) used as
+  // if it were ENU, so 'magnetic north' points 90.8 deg east of GPS north (the SDF <magnetic_field> is ignored)
+  magneticField: [0.39606878, -0.00573836, 0.14567122],
   lat0: 15.8497, lon0: 74.4977, elevation: 0,
 };
 export const SIM_DECLINATION_DEG = Math.atan2(X3.magneticField[0], X3.magneticField[1]) * 180 / Math.PI;
@@ -54,6 +56,9 @@ export class Rng {
 }
 
 export const DEFAULT_ENV = {
+  magDeclination: null,                      // deg; null = Gazebo's field (90.8 deg)
+  magError: 0,                               // deg added to the field direction (a wrong compass)
+  gpsNoise: 0, gpsDelay: 0, gpsFreeze: false, // GPS: noise (m), delay (s), frozen output (a dead GPS)
   gyroNoise: 0, gyroBias: [0, 0, 0], accNoise: 0, baroNoise: 0, magNoise: 0,
   wind: [0, 0, 0], gust: 0,                  // m/s (world ENU) and gust strength (m/s)
   inertiaScale: 1, massScale: 1, motorTauScale: 1, maxRotVelocity: 1000,
@@ -94,6 +99,8 @@ export class QuadX3 {
     // sensor sample-and-hold (Gazebo update rates: IMU 1000 Hz, altimeter 500, magnetometer 100, navsat 10)
     this.sens = { imu: [0, 0, 0, 0, 0, 0], alt: 0, vz: 0, mag: [0, 0, 0], gps: [X3.lat0, X3.lon0, X3.elevation] };
     this.nextAlt = 0; this.nextMag = 0; this.nextGps = 0;
+    this.posHist = [];                     // for the GPS delay
+    this.nextHist = 0;
     this.sampleSensors(true);
   }
 
@@ -201,14 +208,33 @@ export class QuadX3 {
     }
     if (force || this.t >= this.nextMag) {
       this.nextMag = this.t + 1 / 100;
-      const m = mtv(R, X3.magneticField);
-      s.mag = m.map((v) => v + e.magNoise * rng.gauss());
+      let field = X3.magneticField;
+      if ((e.magDeclination !== null && e.magDeclination !== undefined) || e.magError) {
+        const dd = (e.magDeclination ?? SIM_DECLINATION_DEG) + (e.magError || 0);
+        const h = Math.hypot(X3.magneticField[0], X3.magneticField[1]), d = dd * Math.PI / 180;
+        field = [h * Math.sin(d), h * Math.cos(d), X3.magneticField[2]];
+      }
+      const m = mtv(R, field);
+      const k = Math.hypot(...X3.magneticField) / 48.5e-6;   // magNoise is given in uT of a real 48.5 uT field
+      s.mag = m.map((v) => v + e.magNoise * k * rng.gauss());
     }
-    if (force || this.t >= this.nextGps) {
+    if (force || this.t >= this.nextHist) {      // position history every 10 ms for the GPS delay
+      this.nextHist = this.t + 0.01;
+      this.posHist.push([this.t, this.p[0], this.p[1], this.p[2]]);
+      while (this.posHist.length > 200) this.posHist.shift();
+    }
+    if ((force || this.t >= this.nextGps) && !e.gpsFreeze) {
       this.nextGps = this.t + 1 / 10;
-      const lat = X3.lat0 + this.p[1] / 111320;
-      const lon = X3.lon0 + this.p[0] / (111320 * Math.cos(X3.lat0 * Math.PI / 180));
-      s.gps = [lat, lon, X3.elevation + this.p[2]];
+      let pp = this.p;
+      if (e.gpsDelay > 0) {
+        const tt = this.t - e.gpsDelay;
+        const h = this.posHist.find((r) => r[0] >= tt) || this.posHist[0];
+        if (h) pp = [h[1], h[2], h[3]];
+      }
+      const nx = e.gpsNoise ? e.gpsNoise * rng.gauss() : 0, ny = e.gpsNoise ? e.gpsNoise * rng.gauss() : 0;
+      const lat = X3.lat0 + (pp[1] + ny) / 111320;
+      const lon = X3.lon0 + (pp[0] + nx) / (111320 * Math.cos(X3.lat0 * Math.PI / 180));
+      s.gps = [lat, lon, X3.elevation + pp[2]];
     }
   }
 

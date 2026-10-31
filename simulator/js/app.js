@@ -1,12 +1,13 @@
 // app.js - the simulator / ground-station page: connects the flight controller (software or real board),
 // runs the physics in real time, reads keyboard / gamepad, draws the 3D view, the OLED and the live plots.
 import { SimEngine } from "./sim_engine.js";
-import { Pilot, CODES } from "./pilot_input.js";
+import { Pilot, CODES, PAD_DEADZONE } from "./pilot_input.js";
 import { View3D, drawHorizon } from "./view3d.js";
 import { StripChart } from "./plots.js";
 import { SerialLink } from "./fc_webserial.js";
 import { Parser, T, decodeStatus, STATES, REASONS } from "./protocol.js";
 import { BTN, EV } from "./fc_wasm.js";
+import { linkStatus, throttleView } from "./page_status.js";
 
 const $ = (id) => document.getElementById(id);
 const pilot = new Pilot();
@@ -20,8 +21,10 @@ let status = null;        // last decoded STATUS telemetry
 let statusTime = 0;
 let wall0 = 0, sim0 = 0, speed = 1;
 let lastFb = null;
-let gazebo = null;        // { es: EventSource, url }
+let gazebo = null;        // { es: EventSource, url, since, inFlight, postStatus, postAt }
+let bridgeSeen = false;   // the Gazebo bridge answers, while this page is doing something else
 let lastPilotSend = 0;
+let rcCutAt = 0;          // performance.now() when the RC link test cut the pilot stream (0 = link on)
 
 // ------------------------------------------------------------------ live plots
 const C = { r: "#e11d48", p: "#2563eb", y: "#16a34a", t: "#d97706", g: "#7c3aed", k: "#64748b" };
@@ -37,21 +40,30 @@ const charts = {
     { name: "estimate", color: C.g }, { name: "true", color: C.g, dash: true }, { name: "target", color: C.k, dash: true }, { name: "climb m/s", color: C.t }] }),
   mot: new StripChart($("plotMot"), { title: "Motors", min: 0, max: 1, series: [
     { name: "FR", color: C.r }, { name: "RL", color: C.p }, { name: "FL", color: C.y }, { name: "RR", color: C.t }] }),
+  pos: new StripChart($("plotPos"), { title: "Position hold", unit: "m, m/s", series: [
+    { name: "from hold point", color: C.g }, { name: "true", color: C.g, dash: true }, { name: "speed", color: C.t }] }),
 };
 
 // ------------------------------------------------------------------ logging
 let rec = null;
+// how far the flight controller's estimate is from the simulator's truth
+function estimateError(s, tr) {
+  return { pos: Math.hypot(tr.north - s.posN, tr.east - s.posE), att: Math.hypot(tr.roll - s.roll, tr.pitch - s.pitch) };
+}
 function logRow(t) {
   if (!rec) return;
   const s = status || {};
   const tr = engine ? engine.phys.truth() : {};
+  const err = status && engine ? estimateError(s, tr) : { pos: NaN, att: NaN };
+  const raw = pilot.padRaw || [NaN, NaN, NaN, NaN];
   rec.push([t.toFixed(3), s.stateName, s.modeName, s.armed ? 1 : 0, s.rcThr, s.rcRoll, s.rcPitch, s.rcYaw,
-    s.roll, s.pitch, s.yaw, s.alt, s.altTarget, s.vz, tr.roll, tr.pitch, tr.yawMag, tr.alt, tr.north, tr.east,
-    ...(s.motors || [NaN, NaN, NaN, NaN])].map((v) => (typeof v === "number" ? +v.toFixed(4) : v ?? "")).join(","));
+    s.roll, s.pitch, s.yaw, s.alt, s.altTarget, s.vz, tr.roll, tr.pitch, tr.yaw, tr.alt, tr.north, tr.east,
+    ...(s.motors || [NaN, NaN, NaN, NaN]), s.speedModeName, s.posStateName, s.posN, s.posE, s.velN, s.velE, s.holdDist,
+    rcCutAt ? 1 : 0, s.yawOffset, err.pos, err.att, engine ? engine.bridge.controlDelayMs : NaN, pilot.padRest, ...raw].map((v) => (typeof v === "number" ? +v.toFixed(4) : v ?? "")).join(","));
 }
 $("recBtn").onclick = () => {
   if (!rec) {
-    rec = ["t,state,mode,armed,rc_thr,rc_roll,rc_pitch,rc_yaw,roll,pitch,yaw,alt,alt_target,vz,roll_true,pitch_true,yaw_true_mag,alt_true,north_true,east_true,m1,m2,m3,m4"];
+    rec = ["t,state,mode,armed,rc_thr,rc_roll,rc_pitch,rc_yaw,roll,pitch,yaw,alt,alt_target,vz,roll_true,pitch_true,yaw_true_mag,alt_true,north_true,east_true,m1,m2,m3,m4,speed_mode,pos_state,pos_n,pos_e,vel_n,vel_e,hold_dist,rc_cut,heading_offset,pos_err,att_err,control_delay_ms,pad_rest,pad0,pad1,pad2,pad3"];
     $("recBtn").textContent = "Stop & download log";
     $("recBtn").classList.add("rec");
   } else {
@@ -82,6 +94,8 @@ function envFromUi() {
     gyroNoise: v("envGyroN") * Math.PI / 180, accNoise: v("envAccN"), baroNoise: v("envBaroN"),
     gyroBias: [v("envGyroB") * Math.PI / 180, -v("envGyroB") * Math.PI / 180 * 0.7, v("envGyroB") * Math.PI / 180 * 0.4],
     magNoise: v("envMagN") * 1e-6,
+    gpsNoise: v("envGpsN"), gpsFreeze: $("envGpsOff").checked,
+    magError: v("envDecl"),   // compass error in deg (the FC is set up for Gazebo's compass)
   };
 }
 function applyEnv() {
@@ -90,18 +104,20 @@ function applyEnv() {
   engine.opts.upLatencyMs = 2 + (parseFloat($("envLat").value) || 0);
   engine.bridge.opts.burstPeriod = 1 / Math.max(10, parseFloat($("envRate").value) || 50);
   engine.pilotMode = $("pilotProto").value;
-  for (const id of ["envWind", "envGust", "envGyroN", "envAccN", "envBaroN", "envGyroB", "envMagN", "envLat", "envRate"]) {
+  for (const id of ["envWind", "envGust", "envGyroN", "envAccN", "envBaroN", "envGyroB", "envMagN", "envGpsN", "envDecl", "envLat", "envRate"]) {
     const out = $(id + "Val");
     if (out) out.textContent = $(id).value;
   }
 }
 document.querySelectorAll("#envPanel input, #pilotProto").forEach((el) => el.addEventListener("input", applyEnv));
+$("envGpsOff").addEventListener("change", applyEnv);
 $("simSpeed").onchange = () => { speed = parseFloat($("simSpeed").value); resync(); };
 
 // ------------------------------------------------------------------ connections
 function resync() { if (engine) { wall0 = performance.now(); sim0 = engine.t; } }
 
 async function stopAll() {
+  setRcCut(false);
   if (serial) { await serial.close(); serial = null; }
   if (gazebo) { gazebo.es.close(); gazebo = null; }
   engine = null;
@@ -117,6 +133,11 @@ function setMode(m, label) {
   document.body.dataset.mode = m;
   $("oledCard").style.display = m === "software" ? "" : "none";
   $("realOledNote").style.display = m === "arduino" ? "" : "none";
+  $("psWindRow").style.display = m === "software" ? "" : "none";
+  // the RC-lost action is a flight-controller setting: the page can only change it on the software FC
+  // (on the real board: OLED MENU > Failsafe > RC lost)
+  $("rcAction").disabled = m !== "software";
+  if (m === "software" && engine && engine.fc) $("rcAction").value = String(Math.round(engine.fc.get("RC lost")));
 }
 
 async function startSoftware() {
@@ -144,6 +165,7 @@ async function connectArduino() {
   try { await serial.open(115200); } catch (e) { addLog("Port not opened: " + e.message); serial = null; return; }
   engine = new SimEngine({ env: envFromUi() });
   engine.attachSerial(serial);
+  engine.lockstepS = 0.07;
   serial.onData = (b) => engine && engine.serialReceived(b);
   serial.onClose = () => addLog("Serial port closed (board unplugged?)");
   engine.bridge.onLog = addLog;
@@ -169,22 +191,46 @@ async function connectTelemetry() {
   addLog("Listening for STATUS telemetry at 115200 baud...");
 }
 
+// "localhost" tries IPv6 first, and Ubuntu's bridge only listens on IPv4: that wait put 320 ms on every pilot command
+// (measured; 127.0.0.1 takes 12 ms), because each command is a new connection
+function relayBase() { return $("relayUrl").value.trim().replace(/\/$/, "").replace("//localhost", "//127.0.0.1"); }
+
+function openEvents(base) {
+  const es = new EventSource(base + "/events");
+  es.onmessage = (ev) => { try { const s = JSON.parse(ev.data); if (s && s.stateName) { status = s; statusTime = performance.now(); } } catch (_) { } };
+  es.onerror = () => addLog("No connection to " + base + " (is bridge_plus.py / relay.py running in WSL?)");
+  return es;
+}
+
 function connectGazebo() {
-  const base = $("relayUrl").value.replace(/\/$/, "");
+  const base = relayBase();
   stopAll().then(() => {
-    const es = new EventSource(base + "/events");
-    es.onmessage = (ev) => { try { const s = JSON.parse(ev.data); if (s && s.stateName) { status = s; statusTime = performance.now(); } } catch (_) { } };
-    es.onerror = () => addLog("No connection to " + base + " (is bridge_plus.py / relay.py running in WSL?)");
-    gazebo = { es, url: base };
-    setMode("gazebo", "Gazebo in WSL (pilot via relay.py, plots via bridge_plus.py)");
+    gazebo = { es: openEvents(base), url: base, since: performance.now(), inFlight: 0, postStatus: 0, postAt: 0 };
+    setMode("gazebo", "Flying in Gazebo (commands and plots through the bridge)");
     addLog("Gazebo mode: sending pilot input to " + base + "/control");
   });
+}
+
+// Gazebo running while this page does something else is an easy mistake to miss, so the page looks for the bridge
+async function watchBridge() {
+  if (gazebo) {
+    if (gazebo.es.readyState === EventSource.CLOSED) gazebo.es = openEvents(gazebo.url);
+  } else if (mode === "telemetry") {
+    bridgeSeen = false;
+  } else {
+    try {
+      const r = await fetch(relayBase() + "/", { signal: AbortSignal.timeout(1500) });
+      bridgeSeen = r.ok;
+    } catch (_) { bridgeSeen = false; }
+  }
+  setTimeout(watchBridge, 3000);
 }
 
 $("btnSoftware").onclick = startSoftware;
 $("btnArduino").onclick = connectArduino;
 $("btnTelemetry").onclick = connectTelemetry;
 $("btnGazebo").onclick = connectGazebo;
+$("linkAction").onclick = connectGazebo;
 $("btnStop").onclick = async () => { await stopAll(); setMode("none", "Stopped"); };
 $("camBtn").onclick = () => { view.camMode = view.camMode === "chase" ? "ground" : "chase"; $("camBtn").textContent = view.camMode === "chase" ? "Camera: chase" : "Camera: ground"; };
 
@@ -198,6 +244,24 @@ $("cmdLand").onclick = () => cmd(CODES.LAND);
 $("cmdKill").onclick = () => cmd(CODES.KILL);
 $("cmdManual").onclick = () => pilot.toggleManual();
 $("cmdStop").onclick = () => engine && engine.bridge.sendStop();
+document.querySelectorAll("#speedSeg button").forEach((b) => { b.onclick = () => cmd(+b.dataset.code); });
+$("cmdPosHold").onclick = () => cmd(CODES.POSHOLD);
+$("cmdStick").onclick = () => cmd(CODES.STICK);
+
+// ------------------------------------------------------------------ RC link test
+function setRcCut(on) {
+  const was = !!rcCutAt;
+  rcCutAt = on ? performance.now() : 0;
+  if (engine) engine.rcCut = on;
+  $("rcCutBtn").textContent = on ? "Restore RC link" : "Cut RC link";
+  $("rcCutBtn").classList.toggle("cut", on);
+  if (on) addLog("RC LINK CUT: no more pilot packets (simulated transmitter failure)");
+  else if (was) addLog("RC link restored");
+}
+$("rcCutBtn").onclick = () => setRcCut(!rcCutAt);
+$("rcAction").onchange = () => {
+  if (engine && engine.fc) engine.fc.set("RC lost", +$("rcAction").value);
+};
 
 // ------------------------------------------------------------------ virtual OLED buttons
 function setupOledButtons() {
@@ -246,20 +310,30 @@ function drawOled(fb) {
 }
 
 // ------------------------------------------------------------------ Gazebo relay (WSL)
+function postControl(o) {
+  const g = gazebo;
+  if (!g) return;
+  const done = (code) => { g.postStatus = code; g.postAt = performance.now(); g.inFlight--; };
+  g.inFlight++;
+  fetch(g.url + "/control", { method: "POST", body: `${o.thr},${o.roll},${o.pitch},${o.yaw}\n`, headers: { "Content-Type": "text/plain" } })
+    .then((r) => done(r.status), () => done(0));
+}
 function sendGazebo(o, isCode = false) {
   if (!gazebo) return;
-  fetch(gazebo.url + "/control", { method: "POST", body: `${o.thr},${o.roll},${o.pitch},${o.yaw}\n`, headers: { "Content-Type": "text/plain" } }).catch(() => {});
-  if (isCode) { setTimeout(() => sendGazebo(o), 40); setTimeout(() => sendGazebo(o), 80); }
+  if (isCode) { postControl(o); setTimeout(() => postControl(o), 40); setTimeout(() => postControl(o), 80); }
+  else if (gazebo.inFlight < 3) postControl(o);         // bridge busy: the next stick packet is only 40 ms away, don't pile up
 }
 
 // ------------------------------------------------------------------ simulation clock (worker metronome)
 const metronome = new Worker(new URL("./metronome.worker.js", import.meta.url));
 let nextLog = 0;
 metronome.onmessage = () => {
+  servicePilotInput(performance.now());
   if (!engine) return;
   const target = sim0 + (performance.now() - wall0) / 1000 * speed;
   let n = 0;
   while (engine.t < target && n < 120) {
+    if (engine.waitingForBoard(performance.now())) break;
     engine.step();
     n++;
     if (engine.t >= nextLog) { nextLog = engine.t + 0.02; logRow(engine.t); }
@@ -268,27 +342,36 @@ metronome.onmessage = () => {
 };
 metronome.postMessage("start");
 
-// ------------------------------------------------------------------ frame loop
-let lastFrame = performance.now(), lastPlot = 0;
-function frame() {
-  const now = performance.now();
-  const dt = Math.min(0.1, (now - lastFrame) / 1000);
-  lastFrame = now;
+// ------------------------------------------------------------------ pilot input, 50 times a second
+// Runs on the metronome, not in the animation loop: animation frames stop when the page is hidden, and the last stick
+// values would keep flying the drone. Hidden page = nobody is flying = neutral sticks.
+let lastPilotRead = performance.now();
+function servicePilotInput(now) {
+  if (now - lastPilotRead < 19) return;
+  const dt = Math.min(0.1, (now - lastPilotRead) / 1000);
+  lastPilotRead = now;
   pilot.armed = !!(status && status.armed);
-  const out = pilot.update(dt);
+  if (status && status.version === 2) pilot.speedMode = status.speedMode;
+  const out = pilot.update(dt, document.hidden);
   const codes = pilot.takeCommands();
   if (engine) {
     engine.setPilot(out);
     codes.forEach((c) => engine.command(c));
-    if (engine.fc) {
-      engine.fc.serviceStorage();
-      const fb = engine.fc.render(engine.nowUs());
-      if (fb) lastFb = fb;
-      if (lastFb) drawOled(lastFb);
-    }
-  } else if (gazebo) {
+  } else if (gazebo && !rcCutAt) {
     codes.forEach((c) => sendGazebo({ thr: c, roll: out.roll, pitch: out.pitch, yaw: out.yaw }, true));
-    if (now - lastPilotSend > 40) { lastPilotSend = now; sendGazebo(out); }
+    if (now - lastPilotSend > 35) { lastPilotSend = now; sendGazebo(out); }
+  }
+}
+
+// ------------------------------------------------------------------ frame loop
+let lastPlot = 0, lastView = 0, lastChartDraw = 0, lastPanels = 0;
+function frame() {
+  const now = performance.now();
+  if (engine && engine.fc) {
+    engine.fc.serviceStorage();
+    const fb = engine.fc.render(engine.nowUs());
+    if (fb) lastFb = fb;
+    if (lastFb) drawOled(lastFb);
   }
 
   // drone pose for the 3D view: truth from the physics, or the FC's own estimate in telemetry-only modes
@@ -300,10 +383,18 @@ function frame() {
   if (s) {
     hud.push(`${s.stateName}  ${s.armed ? s.modeName : ""}  ${s.failsafe ? "FAILSAFE: " + s.reasonName : ""}${s.crashed ? " CRASH" : ""}`);
     hud.push(`alt ${s.alt.toFixed(2)} m  climb ${s.vz.toFixed(2)} m/s  target ${s.altTarget.toFixed(2)}`);
+    if (s.version === 2) {
+      const ph = s.posActive ? s.posStateName : s.posOn ? "waiting (" + s.posStateName + ")" : "OFF";
+      hud.push(`${s.speedModeName}  position hold ${ph}${s.atCeiling ? "  AT HEIGHT LIMIT" : ""}${rcCutAt ? "  RC LINK CUT" : ""}`);
+    }
   }
   if (tr) hud.push(`speed ${tr.speed.toFixed(1)} m/s  N ${tr.north.toFixed(1)}  E ${tr.east.toFixed(1)}`);
-  if (phys) view.draw(phys, s ? s.motors : (engine ? engine.bridge.motors : null), hud);
-  if (s) drawHorizon($("horizon"), s.roll, s.pitch, s.yaw);
+  // drawing is rationed: while the page draws, it can't answer the board (3D 30 times a second, plots 15, panels 10)
+  if (now - lastView > 32) {
+    lastView = now;
+    if (phys) view.draw(phys, s ? s.motors : (engine ? engine.bridge.motors : null), hud);
+    if (s) drawHorizon($("horizon"), s.roll, s.pitch, s.yaw);
+  }
 
   // plots at ~30 Hz
   if (s && now - lastPlot > 33) {
@@ -312,12 +403,22 @@ function frame() {
     const thrPlot = s.rcThr >= 1.5 && s.rcThr <= 3.5 ? (s.rcThr - 2.5) * 2 : (s.rcThr <= 1 ? s.rcThr : NaN);
     charts.rc.push(t, [s.rcRoll, s.rcPitch, s.rcYaw, thrPlot]);
     charts.att.push(t, [s.roll, tr ? tr.roll : NaN, s.pitch, tr ? tr.pitch : NaN, s.rollSp]);
-    charts.yaw.push(t, [s.yaw, tr ? tr.yawMag : NaN, s.headingTarget]);
+    charts.yaw.push(t, [s.yaw, tr ? tr.yaw : NaN, s.headingTarget]);
     charts.alt.push(t, [s.alt, tr ? tr.alt : NaN, s.altTarget, s.vz]);
     charts.mot.push(t, s.motors);
+    const i = engine && engine.fc ? engine.info() : null;
+    charts.pos.push(t, [s.posActive ? s.holdDist : NaN,
+      i && s.posActive && tr ? Math.hypot(tr.north - i.holdN, tr.east - i.holdE) : NaN,
+      tr ? tr.speed : Math.hypot(s.velN, s.velE)]);
   }
-  Object.values(charts).forEach((c) => c.draw());
-  updatePanels(s);
+  if (now - lastChartDraw > 65) {
+    lastChartDraw = now;
+    Object.values(charts).forEach((c) => c.draw());
+  }
+  if (now - lastPanels > 99) {
+    lastPanels = now;
+    updatePanels(s);
+  }
   requestAnimationFrame(frame);
 }
 
@@ -354,10 +455,125 @@ function updatePanels(s) {
   const o = pilot.output();
   $("stSticks").textContent = `roll ${o.roll.toFixed(2)}  pitch ${o.pitch.toFixed(2)}  yaw ${o.yaw.toFixed(2)}  thr ${o.thr.toFixed(2)}`;
   $("cmdArm").textContent = s && s.armed ? "Disarm (Enter)" : "Arm (Enter)";
+  updatePosPanel(s);
+  updateRcPanel(s);
+  updateDiagnostics(s, o);
+  updateLinkBanner(s);
+  updateThrottleCard(s);
+}
+
+function updateLinkBanner(s) {
+  const now = performance.now(), g = gazebo;
+  const st = linkStatus({
+    mode, bridgeSeen, relay: g ? g.url : "",
+    connectedFor: g ? (now - g.since) / 1000 : 0,
+    postStatus: g && now - g.postAt < 3000 ? g.postStatus : 0,
+    telemetryAge: s ? (now - statusTime) / 1000 : 99,
+    pilotHz: s ? s.pilotHz : 0,
+    rcCut: !!rcCutAt, hidden: document.hidden, focused: document.hasFocus(), pad: !!pilot.gamepadName,
+  });
+  $("linkBanner").style.display = st ? "" : "none";
+  if (!st) return;
+  $("linkBanner").className = "banner " + st.level;
+  $("linkText").textContent = st.text;
+  $("linkAction").style.display = st.action ? "" : "none";
+}
+
+function updateThrottleCard(s) {
+  const v = throttleView(s);
+  $("thrStick").textContent = v.stickText;
+  // a bar that grows from the centre: right = up, left = down
+  $("thrFill").style.left = `${50 + Math.min(v.stick, 0) * 50}%`;
+  $("thrFill").style.width = `${Math.abs(v.stick) * 50}%`;
+  $("thrPower").textContent = v.powerText;
+  $("thrClimb").textContent = s ? `${s.vz >= 0 ? "+" : ""}${s.vz.toFixed(2)} m/s` : "-";
+  [["FR", 0], ["RL", 1], ["FL", 2], ["RR", 3]].forEach(([n, k]) => {      // telemetry order: FR RL FL RR
+    const m = s && s.motors ? s.motors[k] : 0;
+    $("m" + n).style.width = `${m * 100}%`;
+    $("m" + n + "v").textContent = s ? `${Math.round(m * 100)} %` : "-";
+  });
+}
+
+// Answers "why is it drifting?" without guessing: is a stick being read as a push, is the link slow, is the estimate off
+let pushSince = 0, speedWall = 0, speedSim = 0, simSpeed = 1;
+function updateDiagnostics(s, o) {
+  $("padRawRow").style.display = pilot.padRaw ? "" : "none";
+  if (pilot.padRaw) $("stPadRaw").textContent = "pad raw  " + pilot.padRaw.map((v) => v.toFixed(2)).join("  ");
+  let warn = "";
+  if (pilot.padRest > PAD_DEADZONE) {
+    warn = `Stick not centred (rests at ${pilot.padRest.toFixed(2)}): the drone will move. Use the keyboard or unplug the gamepad.`;
+  } else if (s && s.posActive && s.posState === 2 && !o.roll && !o.pitch) {       // MOVING, but the page sends no stick
+    if (!pushSince) pushSince = performance.now();
+    if (performance.now() - pushSince > 2000) warn = `Flight controller sees a stick push (roll ${s.rcRoll.toFixed(2)}, pitch ${s.rcPitch.toFixed(2)}) but the page sends none.`;
+  } else {
+    pushSince = 0;
+  }
+  $("stickWarn").textContent = warn;
+  $("stickWarn").style.display = warn ? "" : "none";
+  $("usbRow").style.display = mode === "arduino" ? "" : "none";
+  if (engine && mode === "arduino") {
+    const b = engine.bridge, wall = performance.now();
+    if (wall - speedWall > 1000) {          // the simulation slows down instead of letting the drone wobble
+      simSpeed = (engine.t - speedSim) / ((wall - speedWall) / 1000);
+      speedWall = wall;
+      speedSim = engine.t;
+    }
+    $("stUsb").textContent = `${b.controlDelayMs.toFixed(0)} ms (recent max ${b.controlDelayMax.toFixed(0)}), sim speed ${simSpeed.toFixed(2)}x`;
+  }
+  if (engine && s && s.version === 2) {
+    const e = estimateError(s, engine.phys.truth());
+    $("stEstErr").textContent = `${e.pos.toFixed(2)} m, ${e.att.toFixed(1)} deg`;
+  } else $("stEstErr").textContent = "-";
+  $("stHeadOff").textContent = s && Number.isFinite(s.yawOffset) ? `${s.yawOffset.toFixed(1)} deg` : "-";
+}
+
+function updatePosPanel(s) {
+  const v2 = !!(s && s.version === 2);
+  document.querySelectorAll("#speedSeg button").forEach((b) => b.classList.toggle("on", v2 && +b.dataset.code === 17 + s.speedMode));
+  $("cmdPosHold").classList.toggle("on", v2 && s.posOn);
+  $("cmdPosHold").textContent = `Position hold: ${v2 ? (s.posOn ? "ON" : "OFF") : "-"} (P)`;
+  $("cmdStick").textContent = `Sticks: ${v2 ? (s.stickAngle ? "ANGLE" : "SPEED") : "-"} (K)`;
+  if (!v2) {
+    for (const id of ["psOn", "psState", "psDist", "psSpeed", "psNE", "psMode", "psCeil", "psWind"]) $(id).textContent = "-";
+    return;
+  }
+  $("psOn").textContent = s.posActive ? "ACTIVE" : s.posOn ? "ON (not flying it now)" : "OFF";
+  $("psOn").className = s.posActive ? "armed" : "";
+  $("psState").textContent = s.posStateName;
+  $("psDist").textContent = s.posActive ? `${s.holdDist.toFixed(2)} m` : "-";
+  $("psSpeed").textContent = `${Math.hypot(s.velN, s.velE).toFixed(2)} m/s`;
+  $("psNE").textContent = `${s.posN.toFixed(1)} / ${s.posE.toFixed(1)} m`;
+  $("psMode").textContent = `${s.speedModeName} / ${s.stickAngle ? "ANGLE" : "SPEED"}`;
+  $("psCeil").textContent = s.altLimit ? `${s.maxAlt} m above take-off${s.atCeiling ? " - AT LIMIT" : ""}` : "OFF (up to 1000 m)";
+  if (engine && engine.fc) {
+    const i = engine.info();
+    $("psWind").textContent = `${Math.hypot(i.windN, i.windE).toFixed(2)} m/s2 of push`;
+  }
+}
+
+function updateRcPanel(s) {
+  const timeout = engine && engine.fc ? engine.fc.get("Link t/o") : 2.0;
+  if (!rcCutAt) $("rcState").textContent = mode === "none" ? "-" : "connected";
+  else {
+    const el = (performance.now() - rcCutAt) / 1000;
+    $("rcState").textContent = el < timeout ? `CUT - failsafe in ${(timeout - el).toFixed(1)} s` : `CUT for ${el.toFixed(0)} s`;
+  }
+  let fs = "-";
+  if (s) {
+    if (s.failsafe) fs = `${s.stateName} (${s.reasonName})${s.posActive ? ", holding position" : ""}`;
+    else if (s.reasonName === "pilot link" && !s.armed) fs = "landed and disarmed (pilot link)";
+    else if (s.linkLost) fs = "link lost (RC lost action NONE)";
+  }
+  $("rcFs").textContent = fs;
+  $("rcFs").className = s && s.failsafe ? "armed" : "";
 }
 
 window.addEventListener("resize", () => Object.values(charts).forEach((c) => c.draw()));
 setMode("none", "Choose how to fly (left panel)");
 requestAnimationFrame(frame);
-if (new URLSearchParams(location.search).get("autostart") === "software") startSoftware();
+const qs = new URLSearchParams(location.search);
+if (qs.get("relay")) $("relayUrl").value = qs.get("relay");
+if (qs.get("autostart") === "software" || qs.get("mode") === "software") startSoftware();
+else if (qs.get("mode") === "gazebo") connectGazebo();
+watchBridge();
 window.__app = { get engine() { return engine; }, get status() { return status; }, pilot, startSoftware };

@@ -31,6 +31,22 @@ button.ghost { background: transparent; }
 button.small { width: auto; padding: 4px 8px; font-size: 12px; }
 button.rec { background: var(--danger); color: #fff; }
 .hint { color: var(--muted); font-size: 12px; margin: 4px 0 10px; }
+.banner { display: flex; align-items: center; gap: 12px; margin: 12px 12px 0; padding: 8px 12px; border-radius: 8px; border: 1px solid; font-weight: 600; font-size: 13px; }
+.banner span { flex: 1; min-width: 0; }
+.banner button { flex: none; }
+.banner.ok { background: rgba(22, 163, 74, 0.14); border-color: var(--ok); }
+.banner.wait { background: rgba(217, 119, 6, 0.16); border-color: #d97706; }
+.banner.bad { background: rgba(220, 38, 38, 0.14); border-color: var(--danger); }
+.thrbar { position: relative; height: 12px; margin: 2px 0 6px; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--bg); }
+.thrbar::after { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--muted); }
+.thrbar i { position: absolute; top: 0; bottom: 0; left: 50%; width: 0; background: var(--accent); }
+.motors { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; margin-top: 8px; }
+.mot { display: grid; grid-template-columns: 18px 1fr 36px; align-items: center; gap: 4px; font-size: 12px; }
+.mot span { color: var(--muted); }
+.mot b { font-weight: 600; text-align: right; }
+.mbar { height: 8px; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; background: var(--bg); }
+.mbar i { display: block; height: 100%; width: 0; background: var(--accent2); }
+.warn { color: var(--danger); font-size: 12px; font-weight: 600; margin: 4px 0 10px; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .kv { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; font-size: 13px; }
 .kv span { color: var(--muted); }
@@ -72,3 +88,7 @@ a { color: var(--accent); }
   main { padding: 8px; }
   header { flex-wrap: wrap; }
 }
+.seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin: 8px 0; }
+.seg button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+button.on { outline: 2px solid var(--accent); }
+#rcCutBtn.cut { background: var(--ok); border-color: var(--ok); }

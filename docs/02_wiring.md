@@ -41,4 +41,4 @@ Only the OLED and the 4 buttons are wired. Everything else goes over the USB-C c
 | on | armed (flying) |
 | fast blink | failsafe or crash |
 
-- To change pins, edit `firmware/AeroFC_R4/board_config.h`.
+- To change pins, edit `firmware/AeroFC_R4_v2/board_config.h`.
