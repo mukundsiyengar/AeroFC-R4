@@ -1,0 +1,45 @@
+{
+ "date": "2026-11-05 23:43",
+ "results": {
+  "Phase 8: hovering over the pad at 3 m: the camera's position of the pad is right": {
+   "pass": true,
+   "detail": "59 pictures, worst 0.006 m off, height from the picture off by 0.069 m"
+  },
+  "Phase 8: hovering over the pad at 6 m: the camera's position of the pad is right": {
+   "pass": true,
+   "detail": "60 pictures, worst 0.012 m off, height from the picture off by 0.134 m"
+  },
+  "Phase 8: moving past the pad: the camera still has it right": {
+   "pass": true,
+   "detail": "8 pictures, worst 0.220 m off"
+  },
+  "Phase 8: with no marker in the picture, nothing is reported": {
+   "pass": true,
+   "detail": "seen: False"
+  },
+  "Phase 9: from +1.0, +1.0 m, 5 m up: lands on the pad": {
+   "pass": true,
+   "detail": "0.001 m from the centre, landed"
+  },
+  "Phase 9: from -1.5, +0.5 m, 6 m up: lands on the pad": {
+   "pass": true,
+   "detail": "0.001 m from the centre, landed"
+  },
+  "Phase 9: from +0.5, -0.6 m, 3 m up: lands on the pad": {
+   "pass": true,
+   "detail": "0.002 m from the centre, landed"
+  },
+  "Phase 9: marker lost on the way down: holds its height, then lands normally": {
+   "pass": true,
+   "detail": "waited 3.0 s, height moved 0.14 m"
+  },
+  "Phase 9: and it lands": {
+   "pass": true,
+   "detail": "landed"
+  },
+  "Phase 9: no marker in view: the command is refused": {
+   "pass": true,
+   "detail": "FLYING"
+  }
+ }
+}

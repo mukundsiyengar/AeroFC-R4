@@ -15,7 +15,7 @@ export class SerialLink {
   async open(baudRate = 115200) {
     this.port = await navigator.serial.requestPort();
     await this.port.open({ baudRate, bufferSize: 65536 });
-    // the R4 firmware also works without DTR, but set it like pyserial does
+    // the firmware works without DTR, but set it like pyserial does
     try { await this.port.setSignals({ dataTerminalReady: true, requestToSend: true }); } catch (_) { /* not supported by every adapter */ }
     this.writer = this.port.writable.getWriter();
     this.readLoop();

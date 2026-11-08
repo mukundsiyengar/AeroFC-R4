@@ -71,10 +71,11 @@ export class WasmFc {
   }
   button(btn, evt, nowUs) { this.x.fc_button(btn, evt, nowUs >>> 0); }
   render(nowUs) { return this.x.fc_render(nowUs >>> 0) ? this.mem().slice(this.fbPtr, this.fbPtr + 1024) : null; }
+  displayOn() { return this.x.fc_display_on() === 1; }
   cmd(code, nowUs) { return this.x.fc_cmd(code, nowUs >>> 0); }
   info() {
     this.x.fc_info();
-    return new Float32Array(this.x.memory.buffer.slice(this.infoPtr, this.infoPtr + 80 * 4));
+    return new Float32Array(this.x.memory.buffer.slice(this.infoPtr, this.infoPtr + 100 * 4));
   }
   paramCount() { return this.x.fc_param_count(); }
   paramName(i) {

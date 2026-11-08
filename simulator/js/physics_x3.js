@@ -23,6 +23,11 @@ export const X3 = {
   magneticField: [0.39606878, -0.00573836, 0.14567122],
   lat0: 15.8497, lon0: 74.4977, elevation: 0,
 };
+// metres per degree on the WGS84 ellipsoid, as Gazebo's NavSat works it out for this world
+export const M_PER_DEG = (() => {
+  const a = 6378137, e2 = 0.00669437999, d = Math.PI / 180, s = Math.sin(X3.lat0 * d), w = 1 - e2 * s * s;
+  return { lat: d * a * (1 - e2) / Math.pow(w, 1.5), lon: d * a * Math.cos(X3.lat0 * d) / Math.sqrt(w) };
+})();
 export const SIM_DECLINATION_DEG = Math.atan2(X3.magneticField[0], X3.magneticField[1]) * 180 / Math.PI;
 
 // ---------------------------------------------------------------- small vector / quaternion helpers
@@ -59,8 +64,10 @@ export const DEFAULT_ENV = {
   magDeclination: null,                      // deg; null = Gazebo's field (90.8 deg)
   magError: 0,                               // deg added to the field direction (a wrong compass)
   gpsNoise: 0, gpsDelay: 0, gpsFreeze: false, // GPS: noise (m), delay (s), frozen output (a dead GPS)
+  gpsJump: [0, 0], magStuck: false,          // GPS off by this much (m north, east); a compass that keeps saying the same thing
   gyroNoise: 0, gyroBias: [0, 0, 0], accNoise: 0, baroNoise: 0, magNoise: 0,
   wind: [0, 0, 0], gust: 0,                  // m/s (world ENU) and gust strength (m/s)
+  extForce: [0, 0, 0],                       // N (world ENU): someone pushing or holding the drone
   inertiaScale: 1, massScale: 1, motorTauScale: 1, maxRotVelocity: 1000,
   seed: 1,
 };
@@ -146,6 +153,8 @@ export class QuadX3 {
       tau = add(tau, scale(perp, -Math.abs(omega) * X3.rollingMomentCoefficient));
     }
 
+    F = add(F, e.extForce);
+
     // ground contact: spring-damper at the 8 corners of the collision box
     this.contact = false;
     const [hx, hy, hz] = [X3.box[0] / 2, X3.box[1] / 2, X3.box[2] / 2];
@@ -195,12 +204,14 @@ export class QuadX3 {
     const R = qToMat(this.q);
     // IMU every step (1 kHz)
     const f = this.specForce;
-    s.imu = [
-      f[0] + e.accNoise * rng.gauss(), f[1] + e.accNoise * rng.gauss(), f[2] + e.accNoise * rng.gauss(),
-      this.w[0] + e.gyroBias[0] + e.gyroNoise * rng.gauss(),
-      this.w[1] + e.gyroBias[1] + e.gyroNoise * rng.gauss(),
-      this.w[2] + e.gyroBias[2] + e.gyroNoise * rng.gauss(),
-    ];
+    if (!e.imuStuck) {           // a dead IMU keeps saying the same thing
+      s.imu = [
+        f[0] + e.accNoise * rng.gauss(), f[1] + e.accNoise * rng.gauss(), f[2] + e.accNoise * rng.gauss(),
+        this.w[0] + e.gyroBias[0] + e.gyroNoise * rng.gauss(),
+        this.w[1] + e.gyroBias[1] + e.gyroNoise * rng.gauss(),
+        this.w[2] + e.gyroBias[2] + e.gyroNoise * rng.gauss(),
+      ];
+    }
     if (force || this.t >= this.nextAlt) {
       this.nextAlt = this.t + 1 / 500;
       s.alt = this.p[2] - this.z0 + e.baroNoise * rng.gauss();
@@ -216,7 +227,7 @@ export class QuadX3 {
       }
       const m = mtv(R, field);
       const k = Math.hypot(...X3.magneticField) / 48.5e-6;   // magNoise is given in uT of a real 48.5 uT field
-      s.mag = m.map((v) => v + e.magNoise * k * rng.gauss());
+      if (!e.magStuck) s.mag = m.map((v) => v + e.magNoise * k * rng.gauss());
     }
     if (force || this.t >= this.nextHist) {      // position history every 10 ms for the GPS delay
       this.nextHist = this.t + 0.01;
@@ -232,8 +243,8 @@ export class QuadX3 {
         if (h) pp = [h[1], h[2], h[3]];
       }
       const nx = e.gpsNoise ? e.gpsNoise * rng.gauss() : 0, ny = e.gpsNoise ? e.gpsNoise * rng.gauss() : 0;
-      const lat = X3.lat0 + (pp[1] + ny) / 111320;
-      const lon = X3.lon0 + (pp[0] + nx) / (111320 * Math.cos(X3.lat0 * Math.PI / 180));
+      const lat = X3.lat0 + (pp[1] + ny + e.gpsJump[0]) / M_PER_DEG.lat;
+      const lon = X3.lon0 + (pp[0] + nx + e.gpsJump[1]) / M_PER_DEG.lon;
       s.gps = [lat, lon, X3.elevation + pp[2]];
     }
   }

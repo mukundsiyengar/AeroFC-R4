@@ -1,24 +1,24 @@
-# 12. Hand-over sheet for the organisers' laptop
+# 12. Running it on a laptop that has only the simulator
 
-Everything runs on the Arduino. Nothing of ours is installed on the laptop: only the organisers' simulator from GitHub is used.
+Everything runs on the Arduino. Nothing of ours is installed on the laptop: only the simulator is used. Print this and hand it over with the board.
 
 ## Start
 
 1. Plug in the R4, with its OLED and buttons attached. Wait 5 s.
 2. Terminal 1:
    ```bash
-   cd ~/hil_test && ./start_gazebo.sh --gui
+   cd uav-hil-simulator && ./start_gazebo.sh --gui
    ```
 3. Terminal 2:
    ```bash
-   cd ~/hil_test && python3 arduino_hil/hil_bridge_v1.py --port /dev/ttyACM0
+   cd uav-hil-simulator && python3 arduino_hil/hil_bridge_v1.py --port /dev/ttyACM0
    ```
 4. Terminal 3:
    ```bash
-   cd ~/hil_test/arduino_hil && python3 control_input.py --interactive
+   cd uav-hil-simulator/arduino_hil && python3 control_input.py --interactive
    ```
 
-If you use `export GZ_PARTITION=hil_test`, do it in terminals 1 and 2.
+If you use `export GZ_PARTITION=...`, do it in terminals 1 and 2.
 
 **Healthy start:**
 - The bridge prints `HELLO_ACK received`, `HIL session started` and `Gazebo Transport: Native (High Perf)`.
@@ -47,6 +47,16 @@ Each press moves that stick by 0.1, and it stays there until `SPACE`.
 | OLED buttons | Hold `SELECT` on the dashboard. |
 
 Timed commands also work, for example `python3 control_input.py --pitch -0.2 --duration 2.0` flies forward for 2 s.
+
+## Flying by itself
+
+| Command | What it does |
+|---|---|
+| `python3 control_input.py --throttle 22 --duration 0.2` | Return to home, then hover at 2 m |
+| `python3 control_input.py --throttle 23 --roll 10 --pitch 5 --yaw 3 --duration 0.2` | Go 10 m north and 5 m east of the take-off point, 3 m up |
+| `python3 control_input.py --throttle 28 --duration 0.2` | Stop the trip and hold here |
+
+Their tool only sends something when a key is pressed, so its silence never counts as a lost RC link.
 
 ## Live plots and data on the OLED
 

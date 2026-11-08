@@ -1,62 +1,34 @@
-# 9. Event-day checklist
+# 9. Demo checklist
 
-## Night before
+## The night before
 
-- [ ] `tools\check_firmware.bat` → COMPILE OK. Upload the final firmware.
-- [ ] `tools\run_tests_headless.bat` → ALL PASS 38/38. Screenshot `simulator/tests.html` for your presentation.
-- [ ] Fly the board in the Windows simulator: take-off, roll/pitch/yaw, climb, let go (position hold), RC link test, land. Record a CSV log ("Record log").
-- [ ] Fly once in the real Gazebo: `gazebo\4_FLY_SOFTWARE_FC_in_Gazebo.bat` (no board), then with the board (launchers 2 and 3). See docs/08.
-- [ ] **MENU → Storage → Save settings**, and check "Boot: saved" after a power cycle.
-- [ ] With the Arduino IDE open, the OLED keeps running and SYSTEM shows **Reset: power-on** (the v1 reset loop is gone).
-- [ ] Charge the laptop. Pack the USB-C data cable, a spare cable, the board with OLED/buttons, the gamepad, and the USB-TTL adapter if you have one.
+- [ ] `tools\check_firmware.bat` says COMPILE OK. Upload the final firmware with `UPLOAD_FIRMWARE.bat`.
+- [ ] `RUN_ALL_TESTS.bat quick`, or at least `tools\run_tests_headless.bat`, says ALL PASS.
+- [ ] Fly once in the real Gazebo: `START_ALL.bat`. See [docs/08](08_gazebo_wsl_setup.md).
+- [ ] **MENU > Storage > Save settings**, and check `Boot: saved` after unplugging and plugging back in.
+- [ ] Pack the USB-C data cable, a spare cable, the board with its OLED and buttons, and the gamepad if you use one.
 
-## At the organisers' PC
+## On a laptop that has only the simulator
 
-**Hand over [the sheet in docs/12](12_hand_over_sheet.md) with the board.** Nothing of ours runs on their laptop.
+Nothing of ours is installed there. **Bring [the sheet in docs/12](12_hand_over_sheet.md).**
 
-1. **Plug the Arduino in first**, then they start Gazebo and the bridge (`hil_bridge_v1.py --port /dev/ttyACM0`). The bridge says HELLO only once at start-up.
-2. OLED: **PC: HANDSHAKE**, then **RUNNING**. The bridge prints `HELLO_ACK received … HIL session started`.
-3. The drone **takes off to 1.5 m by itself** and hovers (altitude-hold take-off, as the problem statement asks).
-4. Manoeuvres with their joystick or `control_input.py`:
-   - roll right, pitch forward/back, yaw both ways
-   - the drone holds height and heading when the sticks are centred
-   - `w` goes forward in their keyboard tool, and `--pitch -0.2` also goes forward. If they want it the other way: **MENU → Input → Inv pitch → ON** (and roll/yaw likewise). No upload needed.
-5. Let go of the sticks: it brakes and **holds its position** (POSITION page: HOLDING, distance in cm).
-6. Show the OLED pages: **PLOTS** (UP once from the first page: live RC input, attitude and altitude), ATTITUDE, ALTITUDE, POSITION, MOTORS, RC INPUT, SYSTEM (sensor rate, µs per step, CRC errors 0). Hold BACK on a menu line to show the built-in help.
-7. Land, any of these: hold SELECT on the dashboard; **MENU → Flight → Land**; `j` twice in their tool; or `python3 control_input.py --throttle 13 --duration 0.2`. Fly again with `SPACE` then `u`, or `--throttle 12`.
+1. **Plug the Arduino in first**, then start Gazebo and the bridge (`hil_bridge_v1.py --port /dev/ttyACM0`). The bridge says HELLO only once at start-up.
+2. The OLED shows `PC:HANDSHAKE`, then `PC:RUNNING`. The bridge prints `HELLO_ACK received`, then `HIL session started`.
+3. The drone **takes off to 1.5 m by itself** and hovers.
+4. Fly with `control_input.py`:
+   - roll, pitch and yaw both ways
+   - the drone holds its height and heading when the sticks are centred
+   - `w` goes forward in their keyboard tool, and `--pitch -0.2` also goes forward. If you want it the other way: **MENU > Input > Inv pitch > ON** (and roll or yaw likewise). No upload is needed.
+5. Let go: it brakes and **holds its position** (POSITION page: `HOLDING`, and the distance).
+6. Show return to home: `python3 control_input.py --throttle 22 --duration 0.2`.
+7. Show the OLED pages: **PLOTS** (UP once from the first page: live RC input, attitude and altitude), ATTITUDE, ALTITUDE, POSITION, MOTORS, RC INPUT, SYSTEM.
+8. Land, any of these ways: hold SELECT on the dashboard, **MENU > Flight > Land**, `j` twice in their tool, or `python3 control_input.py --throttle 13 --duration 0.2`.
 
-## Live plots on event day ("real-time plotting of RC inputs, attitude, altitude")
+## Live plots
 
 | Option | What you need |
 |---|---|
-| **The OLED's PLOTS page (use this one)** | Nothing else. It runs on the R4. |
-| A. Our simulator page as plotter | **USB-TTL adapter**: R4 **D1 → adapter RX**, GND → GND. In the page: More connections → **Telemetry only** → pick the adapter's port. Works with the organisers' unmodified bridge. |
-| B. Their PC runs our `bridge_plus.py` | If they allow it: the same as their bridge plus live plots in the browser (docs/08). |
-| C. No adapter | The OLED shows live attitude, altitude, RC input and motors. Their bridge also writes a CSV (`~/hil_test/logs/hil_flight_*.csv`) with altitude and motors. |
-
-## What to say to the judges (2 minutes)
-
-- **Sensing:** the simulated IMU, baro, compass and GPS arrive over USB. A sensor profile emulates a 16-bit IMU's sensitivity. Calibration covers gyro, level, compass and baro.
-- **Estimation:**
-  - error-state EKF with gyro-bias estimation
-  - accelerometer and compass updates; the compass is yaw-only, so it can't tilt the horizon
-  - GPS-aided correction of acceleration errors
-  - 3-state altitude Kalman filter
-- **Control:**
-  - cascaded angle → rate PID with anti-windup and D filtering
-  - altitude → climb rate → thrust with hover learning and tilt compensation
-  - heading hold
-  - thrust-linearized mixer with saturation priority
-- **Position hold:**
-  - GPS/IMU Kalman filter, and a position → speed → tilt cascade that learns the wind.
-  - Brakes and holds its spot within centimetres, and leans into 8 m/s wind.
-  - Learns a wrong compass in flight.
-  - Speed modes ECO / NORMAL / SPORT.
-- **Safety:**
-  - arming checks
-  - RC-loss failsafe (land on the spot or hover)
-  - crash detection
-  - watchdog (only while armed)
-  - optional height limit up to 1 km
-- **Interoperability:** byte-identical to the official protocol (tested against packets made by their own code). Works with their unmodified bridge and keyboard tool.
-- **Validation:** 35 automated closed-loop scenarios with metrics, a 2-hour endurance run, and the real R4 in the real Gazebo (over 10 minutes of flying, then holds within 0.14 m) with the same firmware code built for Linux (docs/11).
+| **The OLED's PLOTS page** | Nothing else. It runs on the R4. |
+| Our page as a plotter | A **USB-TTL adapter**: R4 D1 to adapter RX, GND to GND. On the page: More connections > **Telemetry only**, then pick the adapter's port. It works alongside their unmodified bridge. |
+| Our `bridge_plus.py` | The same as their bridge, plus live plots in the browser ([docs/08](08_gazebo_wsl_setup.md)). |
+| No extras | The OLED shows live attitude, height, RC input and motors. Their bridge also writes a CSV with height and motors. |

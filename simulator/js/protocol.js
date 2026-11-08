@@ -108,11 +108,13 @@ export function unpackF32(payload, count) {
   return r;
 }
 
-export const STATES = ["DISARMED", "IDLE", "TAKEOFF", "FLYING", "LANDING", "FAILSAFE"];
-export const REASONS = ["-", "user", "pilot link", "sensors", "estimator", "CRASH", "STOP", "KILL", "idle", "landed", "geofence"];
+export const STATES = ["DISARMED", "IDLE", "TAKEOFF", "FLYING", "LANDING", "FAILSAFE", "AUTO"];
+export const REASONS = ["-", "user", "pilot link", "sensors", "estimator", "CRASH", "STOP", "KILL", "idle", "landed", "geofence", "no navigation", "held"];
+export const NAV_KINDS = ["-", "GO TO", "MISSION", "RTH", "MARKER"];
+export const NAV_STAGES = ["-", "CLIMB", "TURN", "CRUISE", "DESCEND", "HOVER", "ALIGN", "DOWN"];
 
 export const SPEED_MODES = ["ECO", "NORMAL", "SPORT"];
-export const POS_STATES = ["OFF", "NOT READY", "MOVING", "BRAKING", "HOLDING", "FAILED"];
+export const POS_STATES = ["OFF", "NOT READY", "MOVING", "BRAKING", "HOLDING", "FAILED", "NAV"];
 
 // STATUS payload: v2 (64 bytes, firmware 2.x) and v1 (48 bytes, firmware 1.x) - see src/core/telemetry.h
 export function decodeStatus(p) {
@@ -143,6 +145,12 @@ export function decodeStatus(p) {
       speedMode: p[51] >> 4, speedModeName: SPEED_MODES[p[51] >> 4] || "?",
       posN: i16(52) / 10, posE: i16(54) / 10, velN: i16(56) / 100, velE: i16(58) / 100,
       holdDist: u16(60) / 100, maxAlt: u16(62), yawOffset: p.length >= 66 ? i16(64) / 100 : NaN,
+      ...(p.length >= 84 ? {
+        navKind: p[66] >> 4, navKindName: NAV_KINDS[p[66] >> 4] || "?", navStage: p[66] & 15, navStageName: NAV_STAGES[p[66] & 15] || "?",
+        wpIndex: p[67], targetN: i16(68) / 10, targetE: i16(70) / 10, homeN: i16(72) / 10, homeE: i16(74) / 10, navDist: u16(76) / 10,
+        imuStale: u16(78), imuTimeBad: u16(80), pilotBad: u16(82), markerSeen: p.length >= 85 && !!(p[84] & 1), gpsJumps: p.length >= 86 ? p[85] : 0,
+        resetCause: p.length >= 87 && p[86] !== 255 ? (["power-on", "reset btn", "software", "upload/USB", "WDT HANG!", "low volt"][p[86]] ?? "other") : "-",
+      } : {}),
     });
   }
   if (p[0] !== 1) return null;

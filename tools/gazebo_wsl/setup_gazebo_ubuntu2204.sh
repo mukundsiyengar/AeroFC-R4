@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # setup_gazebo_ubuntu2204.sh - installs everything the official UAV HIL simulator needs on Ubuntu 22.04
-# (inside WSL on Windows, or on a real Ubuntu PC) and copies the simulator to ~/hil_test.
+# (inside WSL on Windows, or on a real Ubuntu PC) and copies the simulator to ~/hil_test_r4.
 #
 #   bash setup_gazebo_ubuntu2204.sh [path/to/uav-hil-simulator-main]
 #
@@ -28,16 +28,16 @@ echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/pkgs-
 sudo apt-get update
 sudo apt-get install -y gz-harmonic python3-gz-transport13 python3-gz-msgs10
 
-echo "=== 3/4  copy the simulator to ~/hil_test"
+echo "=== 3/4  copy the simulator to ~/hil_test_r4"
 if [[ ! -d "$SIM_SRC/arduino_hil" ]]; then
   echo "Simulator not found at $SIM_SRC - pass its folder as the first argument."; exit 1
 fi
-mkdir -p ~/hil_test ~/hil_test/logs
-cp -r "$SIM_SRC"/. ~/hil_test/
-cp "$HERE/bridge_plus.py" "$HERE/relay.py" "$HERE/run_hil.sh" "$HERE/run_sitl.sh" "$HERE/sitl_check.py"    "$HERE/stop_all.sh" "$HERE/../sitl/aerofc_sitl" ~/hil_test/arduino_hil/
-find ~/hil_test -name "*.sh" -o -name "*.py" | xargs dos2unix -q 2>/dev/null || true
-chmod +x ~/hil_test/*.sh ~/hil_test/arduino_hil/*.sh 2>/dev/null || true
-chmod +x ~/hil_test/arduino_hil/run_hil.sh ~/hil_test/arduino_hil/run_sitl.sh ~/hil_test/arduino_hil/stop_all.sh   ~/hil_test/arduino_hil/aerofc_sitl
+mkdir -p ~/hil_test_r4 ~/hil_test_r4/logs
+cp -r "$SIM_SRC"/. ~/hil_test_r4/
+cp "$HERE/bridge_plus.py" "$HERE/relay.py" "$HERE/run_hil.sh" "$HERE/run_sitl.sh" "$HERE/sitl_check.py"    "$HERE/stop_all.sh" "$HERE/../sitl/aerofc_sitl" ~/hil_test_r4/arduino_hil/
+find ~/hil_test_r4 -name "*.sh" -o -name "*.py" | xargs dos2unix -q 2>/dev/null || true
+chmod +x ~/hil_test_r4/*.sh ~/hil_test_r4/arduino_hil/*.sh 2>/dev/null || true
+chmod +x ~/hil_test_r4/arduino_hil/run_hil.sh ~/hil_test_r4/arduino_hil/run_sitl.sh ~/hil_test_r4/arduino_hil/stop_all.sh   ~/hil_test_r4/arduino_hil/aerofc_sitl
 
 echo "=== 4/4  serial port permission"
 sudo usermod -a -G dialout "$USER" || true

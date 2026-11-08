@@ -1,8 +1,8 @@
-// fc_wasm_api.cpp - exports the UNMODIFIED firmware core (firmware/AeroFC_R4_v3/src/core) as a WebAssembly module,
+// fc_wasm_api.cpp - exports the UNMODIFIED firmware core (firmware/AeroFC_R4/src/core) as a WebAssembly module,
 // so the browser simulator flies exactly the code that runs on the Arduino.
 #include <string.h>
-#include "../../firmware/AeroFC_R4_v3/src/core/fc_app.h"
-#include "../../firmware/AeroFC_R4_v3/src/core/ui_menu.h"
+#include "../../firmware/AeroFC_R4/src/core/fc_app.h"
+#include "../../firmware/AeroFC_R4/src/core/ui_menu.h"
 
 static FcApp app;
 static UiMenu ui;
@@ -11,7 +11,7 @@ static unsigned char inBuf[2048];
 static unsigned char outBuf[2048];
 static unsigned char fb[1024];
 static unsigned char settingsBuf[1024];
-static float info[80];
+static float info[100];
 
 #define EXPORT(n) extern "C" __attribute__((export_name(n)))
 
@@ -44,6 +44,7 @@ EXPORT("fc_poll") int fc_poll(unsigned int nowUs) {
 EXPORT("fc_button") void fc_button(int btn, int evt, unsigned int nowUs) { ui.onButton((uint8_t)btn, (uint8_t)evt, nowUs); }
 // renders into fb (SSD1306 page layout: 8 pages x 128 columns, LSB = top pixel); returns 1 if it changed
 EXPORT("fc_render") int fc_render(unsigned int nowUs) { return ui.render(fb, nowUs) ? 1 : 0; }
+EXPORT("fc_display_on") int fc_display_on() { return ui.displayOn() ? 1 : 0; }
 // help texts (for the automated "everything fits on the OLED" test)
 EXPORT("fc_help_count") int fc_help_count() { return UiMenu::helpCount(); }
 EXPORT("fc_help_title") const char *fc_help_title(int i) { return UiMenu::helpTitle(i); }
@@ -82,6 +83,7 @@ EXPORT("fc_cmd") int fc_cmd(int code, unsigned int nowUs) {
     case 12: return app.core.cmdTakeoff(nowUs);
     case 13: app.core.cmdLand(); return 0;
     case 16: app.core.cmdKill(); return 0;
+    case 22: return app.core.cmdRth(R_NONE) ? 0 : -1;
     default: return -1;
   }
 }
@@ -114,4 +116,10 @@ EXPORT("fc_info") void fc_info() {
   o[63] = c.posCtl.iN; o[64] = c.posCtl.iE; o[65] = c.posCtl.vSpN; o[66] = c.posCtl.vSpE;
   o[67] = c.pos.sigma(); o[68] = c.ceilingAbs; o[69] = c.atCeiling ? 1.0f : 0.0f;
   o[70] = app.params.speedMode; o[71] = c.groundAlt;
+  // flying by itself
+  o[72] = (float)c.nav.kind; o[73] = (float)c.nav.stage; o[74] = c.nav.dist; o[75] = c.nav.targetN; o[76] = c.nav.targetE;
+  o[77] = c.nav.targetH; o[78] = c.rthHomeN; o[79] = c.rthHomeE; o[80] = c.rthHomeSet ? 1.0f : 0.0f; o[81] = (float)c.nav.wpIndex;
+  o[82] = (float)c.nav.wpCount; o[83] = c.nav.hoverT; o[84] = (float)c.imuStaleCount; o[85] = (float)c.imuTimeBad;
+  o[86] = (float)c.pilot.badPackets; o[87] = c.altc.thrust; o[88] = c.pilot.lostSlow ? 1.0f : 0.0f; o[89] = (float)c.pilot.rateHz;
+  o[90] = c.nav.markerFresh() ? 1.0f : 0.0f; o[91] = (float)c.pos.jumps; o[92] = c.magStuck ? 1.0f : 0.0f;
 }

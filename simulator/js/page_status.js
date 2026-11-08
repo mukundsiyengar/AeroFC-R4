@@ -2,7 +2,8 @@
 // what are the throttle stick and the motors doing. No drawing here, so the tests can check every answer.
 
 // i: mode, bridgeSeen (the Gazebo bridge answered), relay, connectedFor (s), postStatus (HTTP answer to the last command,
-// 0 = none), telemetryAge (s), pilotHz (commands per second the flight controller counts), rcCut, hidden, focused, pad
+// 0 = none), telemetryAge (s), pilotHz (commands per second the flight controller counts), rcCut, hidden, focused, pad,
+// keysHelper (the web server reads the keys in the Gazebo window), keysActive (a Gazebo window is active right now)
 export function linkStatus(i) {
   if (i.mode !== "gazebo") {
     if (!i.bridgeSeen) return null;                    // no Gazebo running: nothing to warn about
@@ -11,8 +12,9 @@ export function linkStatus(i) {
       : "This page is not connected to it yet, so your keys reach nothing.";
     return { level: "bad", text: "Gazebo is running. " + doing, action: "gazebo" };
   }
+  if (i.oldFirmware) return { level: "bad", text: "The board has older firmware, so it can't fly by itself. Run UPLOAD_FIRMWARE.bat in AeroFC_R4_GitHub." };
   if (i.rcCut) return { level: "wait", text: "Commands stopped: you cut the RC link (card 4)." };
-  if (i.hidden) return { level: "wait", text: "This page is hidden, so it sends centred sticks. Bring it back to fly." };
+  if (i.hidden && !i.keysHelper) return { level: "wait", text: "This page is hidden, so it sends centred sticks. Bring it back to fly." };
   if (!i.postStatus) {
     return i.connectedFor < 60
       ? { level: "wait", text: "Waiting for Gazebo and the bridge to start..." }
@@ -27,8 +29,36 @@ export function linkStatus(i) {
   if (i.pilotHz > 40) return { level: "bad", text: `Two pilots: the flight controller gets ${i.pilotHz} commands per second. Close the other simulator page.` };
   if (i.pilotHz < 10) return { level: "wait", text: `Commands are on their way: the flight controller counts ${i.pilotHz} per second so far...` };
   const flowing = `Commands reach the flight controller: ${i.pilotHz} per second.`;
+  if (i.keysHelper) {
+    return i.focused || i.keysActive || i.pad
+      ? { level: "ok", text: flowing + " Keys work in the Gazebo window and on this page." }
+      : { level: "wait", text: flowing + " Keys are off while another program is active: use the Gazebo window or this page to fly." };
+  }
   if (!i.focused && !i.pad) return { level: "wait", text: flowing + " Click on this page once: keys go to the window you clicked last." };
   return { level: "ok", text: flowing };
+}
+
+// everything that can be wrong right now, for the fault panel and the log: { name, bad, text }
+export function faultList(s, telemetryAge) {
+  if (!s) return [];
+  const row = (name, bad, text) => ({ name, bad: !!bad, text });
+  const rows = [
+    row("Telemetry", telemetryAge > 2, telemetryAge > 2 ? `none for ${telemetryAge.toFixed(0)} s` : "OK"),
+    row("Sensors", !s.sensorsOk, s.sensorsOk ? "OK" : "no IMU data"),
+    row("RC link", s.linkLost, s.linkLost ? "LOST" : (s.pilotHz ? `${s.pilotHz} a second` : "no stream")),
+    row("Compass", !s.compass, s.compass ? "OK" : "not used"),
+    row("GPS and position", s.posReady === false, s.posReady === false ? "not ready" : "OK"),
+    row("Failsafe", s.failsafe, s.failsafe ? `${s.stateName}: ${s.reasonName}` : "none"),
+    row("Crash", s.crashed, s.crashed ? "CRASH detected" : "none"),
+    row("Damaged packets", false, String(s.crcErrors ?? 0)),
+  ];
+  if (s.navKind !== undefined) {
+    rows.push(row("Simulator stalls", false, `${s.imuStale} repeated readings`));
+    rows.push(row("Bad time stamps", false, String(s.imuTimeBad)));
+    rows.push(row("Invalid pilot packets", false, String(s.pilotBad)));
+    rows.push(row("GPS jumps", false, String(s.gpsJumps ?? 0)));
+  }
+  return rows;
 }
 
 // the throttle stick the flight controller really received, and the motor power compared with hover

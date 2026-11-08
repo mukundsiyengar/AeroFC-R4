@@ -1,7 +1,7 @@
 # 6. How it works (a beginner's tour of the flight code)
 
 ```
- simulator (Gazebo)          Arduino UNO R4  (firmware/AeroFC_R4_v3/src/core)
+ simulator (Gazebo)          Arduino UNO R4 (firmware/AeroFC_R4/src/core)
  ───────────────────         ───────────────────────────────────────────────────────────────────────────
  IMU  BARO  MAG  GPS  ──USB──► hil_protocol ─► sensors ─► ahrs_ekf (roll, pitch, yaw)  ─┐
  every 20 ms                   (packets, CRC)  (FLU->FRD,   alt_ekf  (height, climb)    ├─► flight_core ─► controllers ─► mixer ─┐
@@ -137,7 +137,7 @@ DISARMED --arm (checks OK)--> IDLE --take-off / climb stick / START--> TAKEOFF -
 The official v1 protocol, byte-identical to `hil_protocol.py`; the test "Protocol" checks it against packets made by the official code.
 
 - A corrupted byte loses at most one packet. The parser resyncs like the official bridge.
-- Packets are written **whole or not at all**, only when the USB buffer has room, so the R4 can never hang on a full buffer.
+- Packets are written **whole or not at all**, only when the send buffer has room, so the R4 can never hang on a full buffer.
 - Priority: HELLO_ACK > motors > heartbeat > HELLO > STATUS.
 - If the sensors stop for more than 1 s, the firmware sends **HELLO** once a second. The official bridge answers HELLO_ACK + START, so the session restarts after a board reset or a bridge failsafe.
 
@@ -166,9 +166,10 @@ The pilot-link failsafe only becomes active after a continuous stream of at leas
 
 - One control step per IMU packet: about 50 Hz, the rate the simulator sends.
 - `dt` comes from the packets' own timestamps (clamped 2–100 ms). Gaps over 60 ms make the EKF less confident.
-- The OLED is redrawn up to 25 times a second when nothing else is busy. Data goes out in 32-byte chunks, and only when no USB data is waiting, so the display never delays a control step. After any I2C error the driver pauses, restarts the bus and redraws (self-repair).
+- The OLED is redrawn up to 25 times a second when nothing else is busy. Data goes out in 32-byte chunks of about 0.8 ms, one per pass of the main loop and only when no USB data is waiting, so the display can't noticeably delay a control step. After any I2C error the driver pauses, restarts the bus and redraws (self-repair).
 - **Delay limit:** the control loops stay steady up to about 80 ms of delay; at 100 ms the drone wobbles up to 50° of tilt, and above that it crashes. With a real board on our page, delay comes from USB plus the page being busy drawing. So the page lets the physics run at most **70 ms** ahead of the board's last answer (the simulation runs slower instead), and it rations its drawing (3D 30 times a second, plots 15, panels 10). If the board stops answering, time goes on after 0.5 s so the failsafes work. Measured with the real firmware behind a simulated USB link: USB 100 ms went from 44° of tilt to 2.6°, and USB 150 ms from a crash to 2.7°. The official bridge doesn't wait, but its round trip is far below the limit (Gazebo test: docs/11).
-- A **watchdog** (1 s) resets the board if the program hangs, but **only while armed**: starting it at power-up blocked the Arduino IDE's own USB restart and caused v1's reset loop (docs/03). The SYSTEM page shows the reset cause; "WDT HANG!" means a real hang in flight.
+- A **watchdog** (1 s) resets the board if the program hangs. It starts at the first arm and then stays on. The SYSTEM page shows the reset cause; "WDT HANG!" means a real hang.
+- **On the R4,** USB-C goes straight to the chip (native USB), so the link itself adds only a few milliseconds.
 
 ## 10. Position hold (`position.cpp`, `flight_core.cpp`)
 
@@ -200,7 +201,40 @@ hold point --(Pos P)--> wanted speed --(Vel P + Vel I)--> wanted acceleration --
 - **ANGLE sticks:** the stick sets the tilt (like v1).
 - **Let go:** BRAKING (wanted speed 0, braking tilt limited by the speed mode). Below 0.4 m/s → HOLDING at the point where it stopped. It doesn't spring back to where you let go.
 - **Below 1 m height** the tilt is limited to 10°, so take-off and landing are gentle.
-- **Safety:** if it is far away and keeps getting further for 3 s, position hold switches itself off (FAILED). After 5 s it tries again (brake, then hold where it stops), because this low-drag drone would otherwise slide away for ever. After 3 failures in a row it waits for the next arm.
+- **Safety:** position hold switches itself off (FAILED) if it is far away and keeps getting further for 3 s, or if it gets faster for 0.5 s while it should be slowing down. After 2 s it tries again (brake, then hold where it stops), because this low-drag drone would otherwise slide away for ever. After 3 failures in a row it waits for the next arm.
 - **Not ready** (no GPS, GPS frozen, no compass): it falls back to angle flying, blended over 0.7 s so there is no jump.
 
 **Height limit:** the climb-rate set-point is limited so the drone brakes at 1 m/s² before the ceiling (take-off altitude + Max alt) and stops there.
+
+## 11. Flying by itself (`navigator.cpp`, `flight_core.cpp`)
+
+`navigator.cpp` only decides where to go. It gives position hold a target and a speed, and the same controllers do the flying.
+
+**Return to home** is five stages: CLIMB, TURN, CRUISE, DESCEND and HOVER. A trip to a point or a mission leg is TURN then CRUISE. Details are in docs/14.
+
+**When a stage ends:**
+- CRUISE ends when it has been within 0.15 m and under 0.25 m/s for 1 s.
+- TURN ends when the nose is within 8° of the way to go, or after 8 s. If it is still moving over 1 m/s, it brakes first.
+- If it hasn't got 0.5 m closer in 5 s, further than 1 m out, it stops navigating and lands.
+
+**Metres per degree:** position is latitude and longitude turned into metres. A round 111320 m per degree is 0.6 % too many going north at this latitude, which is 0.25 m on a 40 m trip. So the code uses the WGS84 ellipsoid, as Gazebo's NavSat does.
+
+**RC loss** has three conditions: no packets for `Link t/o`, under 5 packets a second for 2 s, or packets that aren't valid numbers. All of them start RTH. The link coming back doesn't cancel RTH; moving a stick over a third of the way does.
+
+**Hold detection:** in the first 3 s at the hover it learns the thrust it needs. After that, 20 % more or less thrust, or being 0.4 m off its height, for 1 s stops the motors. Wind changes the thrust far less, and slowly.
+
+## 12. When a sensor goes wrong
+
+**A GPS that jumps.** A fix over 3 m and 5 sigma from the estimate isn't believed. After 15 such fixes (1.5 s), it depends on how the GPS got there:
+- It stepped over 5 m between two fixes. No drone moves like that, and the IMU felt nothing, so the estimate is right and the GPS is off. The difference is taken off every later fix, so the hold point, home and every target stay valid.
+- It got there smoothly. Then the estimate was wrong, and it restarts from the GPS.
+
+While the GPS is not believed, it isn't used to work out speed or acceleration either, because a jump would read as hundreds of m/s.
+
+**A compass that sticks.** A compass that reads the same says the drone isn't turning, so the EKF takes every real turn for gyro drift. Its heading stays put while the drone really spins, faster and faster, up to the 5.7°/s drift limit. So the code adds up the gyro's turn since the compass last changed. At 15° it stops using the compass and undoes the drift it learned from it. On the ground, a compass that repeats itself is normal, so this only runs in the air.
+
+**A compass that comes right again.** Position hold works with the EKF heading minus a learned offset (section 10). When the compass moves the EKF heading more than 10° away, the drone hasn't really turned, so the offset moves by the same amount and the heading position hold uses stays right. The EKF also doesn't learn gyro drift from a compass this far off. If the heading is too far off for the compass to be accepted at all, it takes the compass's word once it is on the ground.
+
+**Pushing the wrong way.** Whatever the reason, the speed can only fall while braking, or while going over 1.5 m/s above the speed asked for. If it rises 1 m/s above its lowest for 0.5 s, position hold stops pushing, levels the drone and tries again 2 s later. The first half second of pushing is also enough to measure the real heading (section 10), so the next try usually goes the right way.
+
+**Why all this:** one test run on the real Q let a stuck compass spin the drone up to a 125° heading error, and the offset it learned stayed in memory after the compass recovered. The next flight pushed the wrong way, reached 34 m/s and ended about 400 m away. These changes stop each step of that chain.

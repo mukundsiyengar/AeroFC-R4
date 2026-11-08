@@ -1,0 +1,81 @@
+{
+ "date": "2026-11-05 22:33",
+ "results": {
+  "Phase 2: sensor rate steady near 50 a second": {
+   "pass": true,
+   "detail": "lowest 48, highest 48 a second"
+  },
+  "Phase 2: time stamps always move forward": {
+   "pass": true,
+   "detail": "0 out of order or repeated since start-up"
+  },
+  "Phase 2: readings steady while hovering": {
+   "pass": true,
+   "detail": "height moves 0.003 m, roll 0.00 deg (standard deviation)"
+  },
+  "Phase 2: no damaged packets to speak of": {
+   "pass": true,
+   "detail": "0 failed their CRC check"
+  },
+  "Phase 3: roll right: the estimate follows Gazebo's truth": {
+   "pass": true,
+   "detail": "tilted to 18.8 deg, error 0.23 deg (root mean square), 0.28 deg before taking off the 5 ms the numbers take to get here"
+  },
+  "Phase 3: roll left: the estimate follows Gazebo's truth": {
+   "pass": true,
+   "detail": "tilted to 19.2 deg, error 0.38 deg (root mean square), 0.39 deg before taking off the 5 ms the numbers take to get here"
+  },
+  "Phase 3: pitch forward: the estimate follows Gazebo's truth": {
+   "pass": true,
+   "detail": "tilted to 18.9 deg, error 0.21 deg (root mean square), 0.26 deg before taking off the 5 ms the numbers take to get here"
+  },
+  "Phase 3: pitch back: the estimate follows Gazebo's truth": {
+   "pass": true,
+   "detail": "tilted to 18.9 deg, error 0.31 deg (root mean square), 0.30 deg before taking off the 5 ms the numbers take to get here"
+  },
+  "Phase 3: turning: the heading follows Gazebo's truth": {
+   "pass": true,
+   "detail": "error 0.87 deg over a 6 s turn"
+  },
+  "Phase 3: heading after the turn, held still": {
+   "pass": true,
+   "detail": "error 0.38 deg"
+  },
+  "Phase 4: height estimate follows a climb and descent": {
+   "pass": true,
+   "detail": "moved 8.7 m, error 0.050 m (root mean square)"
+  },
+  "Phase 4: position estimate follows a fast move": {
+   "pass": true,
+   "detail": "error 0.073 m (root mean square)"
+  },
+  "Phase 4: sensor health stays good": {
+   "pass": true,
+   "detail": "compass True, sensors True, position True"
+  },
+  "Phase 5: sideways push 4 N: corrected, no unstable behaviour": {
+   "pass": true,
+   "detail": "pushed 2.07 m sideways and 0.01 m in height, tilted at most 19.2 deg, ended 0.28 m from the start"
+  },
+  "Phase 5: push the other way 4 N: corrected, no unstable behaviour": {
+   "pass": true,
+   "detail": "pushed 2.01 m sideways and 0.01 m in height, tilted at most 19.4 deg, ended 0.38 m from the start"
+  },
+  "Phase 5: push down 4 N: corrected, no unstable behaviour": {
+   "pass": true,
+   "detail": "pushed 0.27 m sideways and 0.54 m in height, tilted at most 0.0 deg, ended 0.27 m from the start"
+  },
+  "Phase 5: push up 3 N: corrected, no unstable behaviour": {
+   "pass": true,
+   "detail": "pushed 0.03 m sideways and 0.38 m in height, tilted at most 0.0 deg, ended 0.03 m from the start"
+  },
+  "Phase 5: twist in roll 0.3 N m: corrected, no unstable behaviour": {
+   "pass": true,
+   "detail": "pushed 0.24 m sideways and 0.03 m in height, tilted at most 4.3 deg, ended 0.00 m from the start"
+  },
+  "Phase 5: twist in yaw 0.3 N m: corrected, no unstable behaviour": {
+   "pass": true,
+   "detail": "pushed 0.11 m sideways and 0.01 m in height, tilted at most 1.8 deg, ended 0.01 m from the start"
+  }
+ }
+}

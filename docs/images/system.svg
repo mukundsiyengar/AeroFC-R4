@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 470" role="img" aria-label="How the simulator on the laptop and the R4 Minima connect">
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#5b6776"/></marker><marker id="b" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M10 0 L0 5 L10 10 z" fill="#5b6776"/></marker></defs>
+<rect width="1180" height="470" rx="14" fill="#ffffff"/>
+<text x="590" y="34" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="19" fill="#1f2a37" text-anchor="middle" font-weight="600">Hardware in the loop: real board and real code, with a simulated drone</text>
+<rect x="24" y="58" width="620" height="388" rx="12" fill="#f7f9fb" stroke="#c4cad3" stroke-width="1.5"/>
+<text x="40" y="84" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" fill="#5b6776" text-anchor="start" font-weight="600">Laptop: the simulator</text>
+<rect x="48" y="104" width="240" height="120" rx="10" fill="#e8f1fb" stroke="#a9c6e8" stroke-width="1.5"/>
+<text x="168.0" y="142.0" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="16" fill="#1f2a37" text-anchor="middle" font-weight="600">Gazebo</text>
+<text x="168.0" y="162.0" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5b6776" text-anchor="middle">simulates the drone, its motors</text>
+<text x="168.0" y="182.0" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5b6776" text-anchor="middle">and its IMU, barometer,</text>
+<text x="168.0" y="202.0" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5b6776" text-anchor="middle">compass and GPS</text>
+<rect x="372" y="104" width="250" height="120" rx="10" fill="#e8f1fb" stroke="#a9c6e8" stroke-width="1.5"/>
+<text x="497.0" y="151.0" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="16" fill="#1f2a37" text-anchor="middle" font-weight="600">Organisers' bridge</text>
+<text x="497.0" y="171.0" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5b6776" text-anchor="middle">hil_bridge_v1.py</text>
+<text x="497.0" y="191.0" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5b6776" text-anchor="middle">sensors out, motors in</text>
+<line x1="288" y1="148" x2="372" y2="148" stroke="#5b6776" stroke-width="2" marker-end="url(#a)"/>
+<line x1="372" y1="180" x2="288" y2="180" stroke="#5b6776" stroke-width="2" marker-end="url(#a)"/>
+<text x="330" y="136" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#5b6776" text-anchor="middle">sensors</text>
+<text x="330" y="198" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#5b6776" text-anchor="middle">motors</text>
+<rect x="48" y="300" width="240" height="110" rx="10" fill="#f4f6f9" stroke="#c4cad3" stroke-width="1.5"/>
+<text x="168.0" y="342.0" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="16" fill="#1f2a37" text-anchor="middle" font-weight="600">Their keyboard tool</text>
+<text x="168.0" y="362.0" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5b6776" text-anchor="middle">control_input.py</text>
+<text x="168.0" y="382.0" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5b6776" text-anchor="middle">or a typed command</text>
+<rect x="372" y="300" width="250" height="110" rx="10" fill="#eef8f1" stroke="#a8d5b5" stroke-width="1.5"/>
+<text x="497.0" y="342.0" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="16" fill="#1f2a37" text-anchor="middle" font-weight="600">Our ground station</text>
+<text x="497.0" y="362.0" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5b6776" text-anchor="middle">optional: keys, gamepad, map,</text>
+<text x="497.0" y="382.0" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5b6776" text-anchor="middle">plots, cameras, fault tests</text>
+<line x1="288" y1="340" x2="390" y2="224" stroke="#5b6776" stroke-width="2" marker-end="url(#a)"/>
+<line x1="497" y1="300" x2="497" y2="224" stroke="#5b6776" stroke-width="2" marker-end="url(#a)" marker-start="url(#b)"/>
+<rect x="790" y="92" width="366" height="300" rx="12" fill="#00797e" stroke="#005f63" stroke-width="2"/>
+<text x="973" y="124" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="19" fill="#ffffff" text-anchor="middle" font-weight="600">Arduino UNO R4 Minima</text>
+<text x="973" y="152" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" fill="#d7f0f0" text-anchor="middle" font-weight="600">Flight code, about 50 times a second:</text>
+<text x="973" y="177" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" fill="#ffffff" text-anchor="middle">protocol and CRC32</text>
+<text x="973" y="202" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" fill="#ffffff" text-anchor="middle">attitude EKF, height and position filters</text>
+<text x="973" y="227" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" fill="#ffffff" text-anchor="middle">attitude, height and position control</text>
+<text x="973" y="252" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" fill="#ffffff" text-anchor="middle">return to home, go to a point, missions</text>
+<text x="973" y="277" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" fill="#ffffff" text-anchor="middle">failsafes and sensor fault checks</text>
+<text x="973" y="302" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" fill="#ffffff" text-anchor="middle">motor mixer</text>
+<rect x="814" y="322" width="150" height="52" rx="5" fill="#06080c" stroke="#2b2f33" stroke-width="1.5"/>
+<text x="889" y="353" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" fill="#ffffff" text-anchor="middle" font-weight="600">OLED display</text>
+<rect x="982" y="322" width="150" height="52" rx="5" fill="#39424e" stroke="#20262d" stroke-width="1.5"/>
+<text x="1057" y="353" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" fill="#ffffff" text-anchor="middle" font-weight="600">4 buttons</text>
+<line x1="622" y1="150" x2="790" y2="150" stroke="#5b6776" stroke-width="2" marker-end="url(#a)"/>
+<line x1="790" y1="188" x2="622" y2="188" stroke="#5b6776" stroke-width="2" marker-end="url(#a)"/>
+<text x="706" y="138" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#1f2a37" text-anchor="middle" font-weight="600">sensor packets</text>
+<text x="706" y="208" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#1f2a37" text-anchor="middle" font-weight="600">motor commands</text>
+<text x="706" y="256" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" fill="#5b6776" text-anchor="middle" font-weight="600">USB-C serial</text>
+<text x="706" y="276" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#5b6776" text-anchor="middle">same protocol as</text>
+<text x="706" y="292" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#5b6776" text-anchor="middle">the organisers define</text>
+</svg>

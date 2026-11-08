@@ -11,13 +11,13 @@ import subprocess
 import sys
 
 root = pathlib.Path(__file__).resolve().parent.parent.parent
-core = root / "firmware" / "AeroFC_R4_v3" / "src" / "core"
+core = root / "firmware" / "AeroFC_R4" / "src" / "core"
 main = root / "tools" / "sitl" / "aerofc_sitl.cpp"
 out = root / "tools" / "sitl" / "aerofc_sitl"
 
 candidates = [
+    pathlib.Path(os.environ.get("AEROFC_ZIG_PYTHON", "no such file")),
     root / ".venv" / "Scripts" / "python.exe",
-    root.parent / "FlightController" / ".venv" / "Scripts" / "python.exe",
     pathlib.Path(sys.executable),
 ]
 py = next((str(c) for c in candidates if c.exists()), sys.executable)

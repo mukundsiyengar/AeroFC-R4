@@ -3,8 +3,8 @@
 # because the Arduino IDE's way sometimes ends with "get_status: LIBUSB_ERROR_TIMEOUT".
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
-$sketch = Join-Path $root "firmware\AeroFC_R4_v3"
-$build = Join-Path $env:LOCALAPPDATA "aerofc_build_v3"
+$sketch = Join-Path $root "firmware\AeroFC_R4"
+$build = Join-Path $env:LOCALAPPDATA "aerofc_build_r4"
 $cli = Join-Path $env:LOCALAPPDATA "Programs\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe"
 if (-not (Test-Path $cli)) { $cli = "arduino-cli" }
 
@@ -15,7 +15,7 @@ Write-Host "`n[1/3] Compiling ..."
 $ErrorActionPreference = "Continue"     # the tools print normal messages on stderr
 & $cli compile --fqbn arduino:renesas_uno:minima --warnings default --build-path $build $sketch 2>&1 |
     Select-String "Sketch uses|Global variables|error" | ForEach-Object { "      $($_.Line)" }
-$bin = Join-Path $build "AeroFC_R4_v3.ino.bin"
+$bin = Join-Path $build "AeroFC_R4.ino.bin"
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path $bin)) { throw "Compile failed." }
 $ErrorActionPreference = "Stop"
 

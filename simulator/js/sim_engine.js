@@ -3,7 +3,8 @@ import { QuadX3 } from "./physics_x3.js";
 import { BridgeReplica } from "./bridge_replica.js";
 import { WasmFc } from "./fc_wasm.js";
 
-export const CODES = { ARM: 10, DISARM: 11, TAKEOFF: 12, LAND: 13, KILL: 16, ECO: 17, NORMAL: 18, SPORT: 19, POSHOLD: 20, STICK: 21 };
+export const CODES = { ARM: 10, DISARM: 11, TAKEOFF: 12, LAND: 13, KILL: 16, ECO: 17, NORMAL: 18, SPORT: 19, POSHOLD: 20, STICK: 21,
+  RTH: 22, GOTO: 23, VISION: 24, WAYPOINT: 25, MISSION_START: 26, MISSION_CLEAR: 27, NAV_CANCEL: 28, MARKER_LAND: 29 };
 const DT = 0.001;
 
 export class SimEngine {
@@ -22,6 +23,7 @@ export class SimEngine {
     this.pilotCodes = [];
     this.lockstepS = 0;        // real board: the physics may run at most this far ahead of its last answer (0 = off)
     this.rcCut = false;        // simulated transmitter failure: no pilot packets at all
+    this.stall = false;        // the simulated world stops, as Gazebo does when the PC is busy: the bridge repeats its last readings
     this.nextPilot = 0;
     this.lastStockSent = null;
     this.stepHooks = [];
@@ -54,6 +56,9 @@ export class SimEngine {
 
   setPilot(p) { Object.assign(this.pilot, p); }
   command(code) { for (let i = 0; i < 3; i++) this.pilotCodes.push(code); }
+  // a command that carries numbers: go to north, east, height (m), or a mission point (see CODE_WAYPOINT in flight_core.h)
+  goTo(north, east, height = 0) { this.pilotCodes.push([CODES.GOTO, north, east, height]); }
+  setWaypoint(number, north, east, height) { this.pilotCodes.push([CODES.WAYPOINT, north, east, height + 1000 * number]); }
 
   servicePilot() {
     if (this.pilotMode === "off" || this.rcCut || !this.bridge.running) return;
@@ -61,7 +66,9 @@ export class SimEngine {
     this.nextPilot = this.t + 1 / this.opts.pilotRateHz;
     const p = this.pilot;
     if (this.pilotCodes.length) {
-      this.bridge.sendControl(this.pilotCodes.shift(), p.roll, p.pitch, p.yaw);
+      const c = this.pilotCodes.shift();
+      if (Array.isArray(c)) this.bridge.sendControl(...c);
+      else this.bridge.sendControl(c, p.roll, p.pitch, p.yaw);
       return;
     }
     if (this.pilotMode === "stock") {
@@ -73,7 +80,7 @@ export class SimEngine {
   }
 
   step() {
-    this.phys.step(DT);
+    if (!this.stall) this.phys.step(DT);
     this.t += DT;
     this.bridge.update();
     this.servicePilot();
@@ -129,6 +136,9 @@ export class SimEngine {
       posN: a[56], posE: a[57], velN: a[58], velE: a[59], holdN: a[60], holdE: a[61], holdDist: a[62],
       windN: a[63], windE: a[64], vSpN: a[65], vSpE: a[66], posSigma: a[67], ceiling: a[68], atCeiling: a[69] > 0.5,
       speedMode: a[70], groundAlt: a[71],
+      navKind: a[72], navStage: a[73], navDist: a[74], navN: a[75], navE: a[76], navH: a[77], homeN: a[78], homeE: a[79],
+      homeSet: a[80] > 0.5, wpIndex: a[81], wpCount: a[82], hoverT: a[83], imuStale: a[84], imuTimeBad: a[85], pilotBad: a[86],
+      thrust: a[87], lostSlow: a[88] > 0.5, pilotHz: a[89], markerSeen: a[90] > 0.5, gpsJumps: a[91], magStuck: a[92] > 0.5,
     };
   }
 }

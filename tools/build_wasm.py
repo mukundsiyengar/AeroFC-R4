@@ -2,8 +2,8 @@
 
     python tools/build_wasm.py
 
-Uses the zig compiler from pip (`pip install ziglang`); it looks for it in this project's .venv and in the
-older FlightController\\.venv.  Nothing native is loaded by the simulator: the browser runs the .wasm file.
+Uses the zig compiler from pip (`pip install ziglang`), from this Python, this project's .venv, or the Python named
+by AEROFC_ZIG_PYTHON.  Nothing native is loaded by the simulator: the browser runs the .wasm file.
 """
 import os
 import pathlib
@@ -11,13 +11,13 @@ import subprocess
 import sys
 
 root = pathlib.Path(__file__).resolve().parent.parent
-core = root / "firmware" / "AeroFC_R4_v3" / "src" / "core"
+core = root / "firmware" / "AeroFC_R4" / "src" / "core"
 api = root / "tools" / "wasm" / "fc_wasm_api.cpp"
 out = root / "simulator" / "fc.wasm"
 
 candidates = [
+    pathlib.Path(os.environ.get("AEROFC_ZIG_PYTHON", "no such file")),
     root / ".venv" / "Scripts" / "python.exe",
-    root.parent / "FlightController" / ".venv" / "Scripts" / "python.exe",
     pathlib.Path(sys.executable),
 ]
 py = next((str(c) for c in candidates if c.exists()), sys.executable)

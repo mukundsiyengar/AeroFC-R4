@@ -1,0 +1,23 @@
+# Builds the firmware for each R4 board on every push, so a change that breaks a board shows up at once.
+name: Build firmware
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        board: [minima, nanor4, unor4wifi]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Install the Arduino UNO R4 boards package
+        run: |
+          arduino-cli core update-index
+          arduino-cli core install arduino:renesas_uno
+      - name: Build
+        run: arduino-cli compile --fqbn arduino:renesas_uno:${{ matrix.board }} --warnings default firmware/AeroFC_R4

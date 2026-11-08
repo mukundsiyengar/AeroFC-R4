@@ -1,0 +1,69 @@
+{
+ "date": "2026-11-06 00:02",
+ "results": {
+  "Phase 12: the whole mixed flight, without one failure": {
+   "pass": true,
+   "detail": "10.0 minutes: 16 trips, 6 stick moves, 5 climbs and descents, 5 turns, 5 returns home, 5 lost links, 5 missions"
+  },
+  "Phase 12: no failsafe, no landing that nobody asked for": {
+   "pass": true,
+   "detail": "12139 samples in the air"
+  },
+  "Phase 12: every trip arrives within 0.5 m": {
+   "pass": true,
+   "detail": "16 trips, worst 0.226 m"
+  },
+  "Phase 12: every return home arrives within 0.5 m": {
+   "pass": true,
+   "detail": "10 returns, worst 0.040 m"
+  },
+  "Phase 12: never tilts or speeds out of control": {
+   "pass": true,
+   "detail": "worst tilt 20.4 deg, top speed 3.4 m/s"
+  },
+  "Phase 12: motor outputs always valid": {
+   "pass": true,
+   "detail": "0 invalid of 12139, between 0.052 and 1.000"
+  },
+  "Phase 12: no motor stuck at its limit for over 1 s": {
+   "pass": true,
+   "detail": "longest 0.10 s"
+  },
+  "Phase 12: one control step takes under 10 ms": {
+   "pass": true,
+   "detail": "typical 850 us, worst 1055 us (sensors come every 20 ms)"
+  },
+  "Phase 12: sensor rate near 50 a second": {
+   "pass": true,
+   "detail": "typical 44 a second, lowest 43"
+  },
+  "Phase 12: pilot stream arrives": {
+   "pass": true,
+   "detail": "typical 24 a second"
+  },
+  "Phase 12: control delay stays under the 80 ms limit": {
+   "pass": true,
+   "detail": "0 of 27655 motor packets over 80 ms, worst 46 ms, average 5.1 ms"
+  },
+  "Phase 12: delays of seconds are Ubuntu's clock moving, not the link": {
+   "pass": true,
+   "detail": "0 motor packets looked over 1 s late, and the clock moved 0 times"
+  },
+  "Phase 12 safety: LAND comes down and stops the motors": {
+   "pass": true,
+   "detail": "after 11.0 s, reason landed"
+  },
+  "Phase 12 safety: KILL stops the motors at once": {
+   "pass": true,
+   "detail": "after 0.04 s, reason KILL"
+  },
+  "Phase 12 safety: flies again after a KILL": {
+   "pass": true,
+   "detail": "flying after 2.6 s"
+  },
+  "Phase 12 safety: a lost link still starts the flight home": {
+   "pass": true,
+   "detail": "after 2.0 s"
+  }
+ }
+}

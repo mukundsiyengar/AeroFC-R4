@@ -1,4 +1,4 @@
-// aerofc_sitl.cpp - "software in the loop": the UNMODIFIED firmware core (firmware/AeroFC_R4_v3/src/core) as a
+// aerofc_sitl.cpp - "software in the loop": the UNMODIFIED firmware core (firmware/AeroFC_R4/src/core) as a
 // Linux program that talks to the organisers' bridge over the virtual serial port, exactly like the Arduino does
 // over USB.  Lets you fly (and test) this flight controller in the real Gazebo without the board.
 //
@@ -20,7 +20,7 @@
 #include <termios.h>
 #include <time.h>
 #include <unistd.h>
-#include "../../firmware/AeroFC_R4_v3/src/core/fc_app.h"
+#include "../../firmware/AeroFC_R4/src/core/fc_app.h"
 
 static FcApp app;
 static volatile sig_atomic_t quit = 0;

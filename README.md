@@ -1,142 +1,186 @@
-# AeroFC-R4 v3: flight controller for the Arduino UNO R4 Minima
+# AeroFC-R4
 
-This is a quadcopter flight controller for the **Aerovidya 2026** hackathon. The **Arduino UNO R4 Minima** is the real flight controller. The drone itself (body, motors, sensors) is simulated by the organisers' **UAV HIL simulator** (Gazebo). They talk over USB using the official `"HI"` packet protocol.
+**A complete quadcopter flight controller on an Arduino UNO R4 Minima, flown in a Gazebo hardware-in-the-loop simulator.**
 
-This folder is **version 3**. Versions 1 and 2 (`..\AeroFC_R4\`, `..\AeroFC_R4_v2\`) are unchanged.
+![License: MIT](https://img.shields.io/badge/license-MIT-blue) ![Board: UNO R4 Minima](https://img.shields.io/badge/board-UNO%20R4%20Minima-00797e) ![Simulator: Gazebo Harmonic](https://img.shields.io/badge/simulator-Gazebo%20Harmonic-orange) ![No libraries needed](https://img.shields.io/badge/libraries-none%20needed-brightgreen)
 
-## New in v3: everything on the R4
+About 50 times a second the board reads the sensors, works out how the drone is tilted and where it is, and computes four motor commands. Only the drone is simulated, so the code runs with real timing and real delays on real hardware, and a bug crashes a simulated drone and not a real one. It started as an entry for the Aerovidya 2026 hackathon.
 
-At the event, the organisers plug the R4 into their laptop and use only their simulator from GitHub. Nothing of ours is installed there. **Print [docs/12](docs/12_hand_over_sheet.md) and hand it over with the board.**
+![How the simulator on the laptop and the R4 Minima connect](docs/images/system.svg)
 
-- **Their keyboard tool works as labelled.** `W` goes forward, while a typed `--pitch -0.2` also goes forward as their protocol says. Only a typed `--pitch 0.1` or `-0.1` flies reversed, because it looks like a key press.
-- **Land and take off again with only their tool.** `j` comes down and the motors stop by themselves after touch-down; `u` takes off again. `--throttle 13` lands, `--throttle 12` takes off.
-- **Live plots on the board:** the OLED's new PLOTS page shows RC input, attitude and altitude.
-- **Won't fly away on their bridge's slow mode.** Without Gazebo's Python bindings, their bridge updates the motors about once a second, and any flight controller flies away (their own fake Arduino reached over 1000 m). The R4 now stays on the ground and shows `BRIDGE TOO SLOW`. The first take-off waits about 4 s for a steady sensor rate.
+## What it does
 
-## New in v2
+| | |
+|---|---|
+| **Estimates** | Attitude EKF with gyro-bias learning, height filter, position filters, GPS-aided attitude, a heading learned from GPS when the compass is wrong |
+| **Flies** | Cascaded PID control of attitude, height and position, heading hold, a thrust-linearised mixer, speed modes, position hold that learns the wind |
+| **Flies by itself** | Return to home like a DJI drone, fly to a marked point, missions of up to 16 points, landing on a marker with a camera |
+| **Stays safe** | RC-loss detection (silence, too few packets, invalid packets), a stuck compass, a GPS that jumps, a stuck IMU, crash detection, arming checks, watchdog |
+| **Needs nothing else** | An OLED and four buttons show and change everything on the board, with live plots and a help page for every setting. No libraries and no other program |
+| **Ground station** (optional) | A web page with keyboard and gamepad, a click-to-fly map, plots, a fault panel, and gestures and object detection on the laptop's cameras |
 
-- **Fixed: commands not reaching the drone in Gazebo.** The launchers opened the page without its Gazebo mode, so the keys flew the page's built-in copy. A banner on the page and a line in the black window now say whether commands really arrive.
-- **Fixed: every command in Gazebo arriving about 320 ms late** (`localhost` tries IPv6 first; the page now uses `127.0.0.1`).
-- **Gentle landing with the stick:** it slows down near the ground, comes straight down, and the motors stop on touch-down. Measured on the real R4 in Gazebo: 5.2 s from 1.5 m, touching at 0.28 m/s, 0.0 m sideways.
-- **New card "Throttle and motors":** the stick, climb speed and power above hover, also on the OLED. About 66 % at any height is correct (docs/04).
-- **Fixed: board restarting, OLED freezing, Windows USB sounds repeating** while the Arduino IDE was open.
-  - Cause: the Arduino IDE asks the board to restart through the watchdog timer. v1 had already started the watchdog at power-up, so the board hung inside the USB code, the watchdog reset it ("WATCHDOG RESET!"), and it reconnected again and again.
-  - Fix: the watchdog now starts only when you arm. The OLED driver also recovers by itself after any I2C glitch, and the SYSTEM page shows the true reset cause.
-  - Details: [docs/03](docs/03_upload_and_first_run.md#why-v1-kept-restarting-fixed-in-v2).
-- **Fixed: gyro drift crashing the drone.** A gyro that starts drifting in flight (3 °/s) used to tilt the drone over and crash it. Now it moves 1.7 m and the filter recovers (measured on a real R4).
-- **Fixed: Arduino IDE uploads failing** (`LIBUSB_ERROR_TIMEOUT`, `Lost device after RESET?`). New: **`UPLOAD_FIRMWARE.bat`** uploads with one double-click.
-- **Fixed: drone starting to drift in one direction after flying a while.** Four causes were found and fixed:
-  - A gamepad stick resting off-centre was read as a push (deadzone now 25 %, with a red warning on the page).
-  - With a real board, USB delay plus a busy page could get close to the point where the drone gets unstable. The physics now waits for the board.
-  - The learned heading offset could go wrong after fast flying (up to 31°, now below 1°).
-  - Position hold stayed off for ever after its safety check tripped. Now it tries again by itself.
+## Wiring
 
-  See [docs/10](docs/10_troubleshooting.md) for what to check if it ever happens again.
-- **Position hold (GPS), ON at power-up.** Let go of the sticks and the drone brakes, stops and stays on its spot, fighting wind (8 m/s wind: it moves less than 0.7 m). Switch it on/off from the OLED, the simulator page or the keyboard (P).
-- **Two stick styles:**
-  - **SPEED** (like DJI, default): the stick sets the speed.
-  - **ANGLE**: the stick sets the tilt, as in v1.
-- **Speed modes ECO / NORMAL / SPORT.**
+Only an OLED and four buttons, and it also flies without them. Details are in [docs/02](docs/02_wiring.md).
 
-  | | ECO | NORMAL | SPORT |
-  |---|---|---|---|
-  | Top speed | 2 m/s | 5 m/s | 10 m/s |
-  | Max tilt | 15° | 25° | 35° |
-  | Climb | 1 m/s | 2 m/s | 4 m/s |
-  | Descend | 0.7 m/s | 1 m/s | 2.5 m/s |
-  | Turn rate | 45°/s | 90°/s | 150°/s |
+![Wiring of the OLED and four buttons to the Arduino UNO R4 Minima](docs/images/wiring.svg)
 
-- **Height up to 1000 m**, with an optional **height limit** (OFF by default; on the OLED: Flight → Alt limit / Max alt).
-- **RC link test** in the simulator: "Cut RC link". After 2 s the failsafe lands the drone on the spot, or hovers if you choose HOLD.
-- **Help on the OLED:**
-  - The bottom line of every menu explains the selected item.
-  - Hold **BACK** for a full help page.
-  - **MENU → Help** has 15 topics.
-- **New dashboard pages:**
-  - **POSITION** page.
-  - **MOTORS** page redrawn as the drone seen from above (FL FR / RL RR, spin direction, %). It was checked against what the simulator receives.
-- **Gazebo made easy:**
-  - Double-click launchers in [`gazebo\`](gazebo/).
-  - A **software flight controller for Linux (SITL)** flies the real Gazebo without the board.
+## Which boards work
 
-## Start here
+| Board | Status |
+|---|---|
+| **Arduino UNO R4 Minima** | **Flown:** every result below is from this board |
+| Arduino Nano R4 | Builds with no changes, never flown |
+| Arduino UNO R4 WiFi | Builds, never flown. Its USB goes through an ESP32, which is slower |
+| Other 32-bit boards with a floating-point unit | Need a small port: only 6 files touch the hardware, and the flight code in `src/core` has no Arduino functions |
+| Arduino UNO R3, classic Nano, Mega | Can't run it: it needs 16 KB of RAM, and an UNO R3 has 2 KB |
 
-| When | Do this | Guide |
-|---|---|---|
-| **No board** | Double-click **`START_SIMULATOR.bat`**, press **Fly the software FC**, fly with the keyboard (W A S D, Q E, R F). | [docs/04](docs/04_flying_controls.md) |
-| **Board** | Double-click **`UPLOAD_FIRMWARE.bat`**, then in the simulator press **Connect Arduino R4**. | [docs/03](docs/03_upload_and_first_run.md) |
-| **Real Gazebo** | Double-click the files in `gazebo\` (in number order). | [docs/08](docs/08_gazebo_wsl_setup.md) |
-| **Event day** | Follow the checklist. | [docs/09](docs/09_event_day_checklist.md) |
+[docs/16](docs/16_other_boards.md) has the sizes, and how to port it to another board.
 
-## What is tested, and what is not yet
+## Try it
 
-**Tested:**
-- **Your real R4 with v3 and only the organisers' files, freshly unpacked from their zip:** their unmodified bridge, every key of their keyboard tool, their timed commands, land and take off again, restarts and wrong start order, and 10 minutes of random flying, then it holds within 0.02 m (docs/11, section 0).
-- **On a real R4 Minima in the real Gazebo, through launcher 3 and the organisers' bridge: over 10 minutes of flying, then holds within 0.14 m,** and an RC-loss landing 0.00 m from the spot. 9 of my 11 checks are inside their limits; the other two are small misses, explained in docs/11 (0.30 m settling after a stop against under 0.3 m, and a brief 7.4° heading offset against under 5°). Control delay: typically 5 ms, worst 64 ms.
-- **On a real R4 Minima in the real Gazebo through launcher 3:** commands from the page, take-off again and stick landings from 1.5, 7.8 and 22 m (docs/11).
-- **On a real R4 Minima with the simulator's physics:** wind 8 m/s moves it 0.78 m, gyro noise 0.56 m, gyro drift 1.67 m. Control step 946 µs at most, 0 CRC errors.
-- **Compiles** for the UNO R4 Minima with 0 warnings in our code: 114 KB flash (43 %), 16 KB RAM (48 %). Check it with `tools\check_firmware.bat`.
-- **38/38 automated flight tests** in the browser replica. They run the same flight code, compiled to WebAssembly. They cover all v1 tests plus:
-  - position hold in calm air and in 5 and 8 m/s wind
-  - SPEED and ANGLE sticks
-  - the speed modes
-  - compass errors from −30° to +60° in wind, and −76° and 180° learned in flight
-  - far from home and a full turn
-  - take-off and landing in wind
-  - RC loss with LAND / HOLD / link restored
-  - GPS stuck, compass off, noisy and delayed GPS
-  - smooth mode switching
-  - height limit at 20 m and a climb to 1000 m
-  - the OLED help and motor readings
-  - a resting gamepad stick, and keyboard + gamepad together
-  - 10-minute flights
-  - slow USB and a busy page (the real firmware behind a simulated USB link)
-  - position hold recovering after FAILED
-  - gyro noise and drift switched on in flight
-  - landing with the stick, a wobbling left stick, and what the page says about the command link
-  - the organisers' keyboard tool, landing with only their tool, and a bridge too slow to fly on
+### With nothing but a Windows PC
 
-  A 2-hour simulated flight also ran. See [docs/11](docs/11_test_report.md).
-- **9/9 checks in the real Gazebo** (Ubuntu 22.04 in WSL, Gazebo Harmonic), flown by the same firmware code built for Linux:
-  - take-off, then hover within 0.00 m
-  - forward and let go: stops 2.3 m later, then holds within 0.1 m
-  - height limit 20.05 m
-  - RC loss: failsafe after 2.0 s, lands 0.00 m from where the link was lost
+Needs Python and Edge or Chrome. Double-click `START_SIMULATOR.bat`, then press **Fly the software FC**. The same flight code flies a replica of the drone in your browser, with no board and no Gazebo. Open `simulator/tests.html` to watch the automated flight tests run.
 
-**Not tested by me (needs you):**
-- The OLED and buttons on the real board (I can't see them). First check: the SYSTEM page, and that the OLED no longer resets with the Arduino IDE open.
-- Your real gamepad (tested with a fake one).
-- The page's **Connect Arduino R4** button (it needs your click in the browser; I used a test relay).
-- The banner and keys in your real Edge window (I flew from the app's browser pane with the same page), and launcher 2's permission step (the board was already shared).
+### With the simulator
 
-## Folder map
+The real test is in **[the UAV HIL Simulator](https://github.com/Pramod-Gurav/uav-hil-simulator)**, the simulator the hackathon's organisers provide. It isn't part of this repository, and it belongs to its authors. It needs Ubuntu 22.04 and Gazebo Harmonic. On Windows that means WSL, and everything is scripted.
 
-```
-AeroFC_R4_v3/
-  START_SIMULATOR.bat          simulator / ground station for practice at home (Edge, port 8767)
-  UPLOAD_FIRMWARE.bat          compile and upload to the board, no Arduino IDE window needed
-  gazebo/                      double-click launchers for Ubuntu + Gazebo (docs/08)
-  firmware/AeroFC_R4_v3/       the Arduino sketch (open AeroFC_R4_v3.ino); no libraries to install
-    src/core/                  flight code (EKF, position hold, controllers, protocol, menu + help); also runs in the simulator and SITL
-    src/hal/                   Arduino-only parts: OLED driver, buttons, flash, reset cause / watchdog
-  simulator/                   index.html (fly), tests.html (automated tests), fc.wasm
-  tools/                       build_wasm.py, check_firmware.bat, run_tests_headless.bat, serve.py, upload_firmware.ps1
-    gazebo_wsl/                Ubuntu setup, bridge_plus.py, run_hil.sh, run_sitl.sh, sitl_check.py, stop_all.sh
-    sitl/                      aerofc_sitl (the firmware as a Linux program) and its build script
-  docs/                        guides, numbered in reading order
+1. Download the simulator from the link above.
+2. Follow [the first-time set-up in docs/08](docs/08_gazebo_wsl_setup.md#set-it-up-for-the-first-time). It takes 10 to 20 minutes.
+3. **Without a board:** double-click `START_ALL.bat`. The same flight code runs as a program on the PC.
+4. **With the R4 Minima:** wire it, plug it in, run `UPLOAD_FIRMWARE.bat`, then `START_ALL.bat`.
+
+`STOP_ALL.bat` stops everything. `START_ALL camera` adds the down camera and a landing pad.
+
+The board also flies with **only** the simulator's own files, with nothing of ours on the laptop:
+
+```bash
+./start_gazebo.sh --gui                                                # terminal 1
+python3 arduino_hil/hil_bridge_v1.py --port /dev/ttyACM0               # terminal 2: it takes off by itself
+python3 arduino_hil/control_input.py --interactive                     # terminal 3: fly with the keys
+python3 arduino_hil/control_input.py --throttle 22 --duration 0.2      # return to home
+python3 arduino_hil/control_input.py --throttle 23 --roll 10 --pitch 5 --yaw 3 --duration 0.2      # go 10 m north, 5 m east, 3 m up
 ```
 
-## Docs
+[docs/12](docs/12_hand_over_sheet.md) is a one-page sheet for this.
+
+### Uploading with the Arduino IDE
+
+Open `firmware/AeroFC_R4/AeroFC_R4.ino`, choose **Arduino UNO R4 Minima**, and press Upload. No libraries are needed. See [docs/03](docs/03_upload_and_first_run.md).
+
+## Flying
+
+Keys work while the Gazebo window or the page is active, with no click on the page.
+
+| Key | What it does | Key | What it does |
+|---|---|---|---|
+| `W` `S` | Forward, back | `T` | Take off |
+| `A` `D` | Left, right | `L` | Land |
+| `Q` `E` | Turn left, right | `H` | Return to home |
+| `R` `F` | Up, down | `Backspace` | **KILL:** motors stop at once |
+
+Let go of the sticks and it brakes and holds its spot. Move a stick to take over from anything it is doing by itself. All the keys and the gamepad are in [docs/04](docs/04_flying_controls.md).
+
+## How it works
+
+Outer loops set the targets of inner loops. Each one is faster and more direct than the one before:
+
+![Control cascades](docs/images/cascades.png)
+
+![Flight states](docs/images/states.svg)
+
+[docs/06](docs/06_how_it_works.md) is a beginner's tour of every algorithm: the EKF, the Kalman filters, PID control, the mixer, the protocol and CRC32, GPS aiding, and what happens when each sensor goes wrong.
+
+## Tested how
+
+Everything flown is judged by **Gazebo's own true position**, not by what the flight controller believes. `RUN_ALL_TESTS.bat` runs it all and writes a dated report.
+
+**On the real R4 Minima: 86 of 86 checks pass**, on the final firmware, in Gazebo through the simulator's own bridge. The same tests without the board, and 58 tests in the browser replica, run the same flight code.
+
+| What | Measured on the R4 Minima |
+|---|---|
+| Return to home after a lost RC link, from 30 m in 8 directions | Worst 0.030 m from home, then holds 2 m within 0.046 m |
+| Flying to 20 random points up to 50 m away | Worst 0.085 m off |
+| Landing on the camera's marker, from 3 directions | Within 0.002 m of its centre |
+| Attitude estimate against Gazebo's true attitude, 19° tilts | 0.39 to 0.44° (root mean square) |
+| A 10-minute mixed flight: 16 trips, 5 lost links, 5 missions | No failsafe, every trip within 0.23 m |
+| GPS jumping 50 m while hovering | Moved at most 0.06 m |
+| A stuck or zeroed compass on the way home | Gets home, within 0.24 m |
+| One control step | Typically 0.85 ms, worst 1.06 ms, of the 20 ms between sensor bursts |
+| Control delay over USB | Average 5 ms, worst 46 ms, none of 27655 motor packets over the 80 ms limit |
+| KILL | Motors stop in 0.04 s |
+
+The full results, with every check and its measurement, are in [docs/11](docs/11_test_report.md).
+
+**Limits you should know about:**
+
+- **Only simulated.** Gazebo's GPS has no noise, so a real drone would be far less exact.
+- **Sensor rate:** 43 to 44 bursts a second reach the board through Ubuntu inside Windows, not the 50 Gazebo sends. It flies steadily at that rate.
+- **After a compass fault,** the next trip ends 0.3 to 0.55 m from its target until the heading is learned again. My limit for this test is 0.5 m: the real board passed with 0.32 m, but 2 of 4 runs without the board missed it, with 0.52 m and 0.55 m.
+- **When the GPS stops changing,** it lands where it is, but it can't brake without GPS, so it coasts about 13 m first.
+- **Never tried:** a real gamepad, a laptop running Ubuntu directly, the Nano R4 and the UNO R4 WiFi, and power use.
+
+## Versions
+
+| Version | What it added |
+|---|---|
+| [v4.0](../../tree/v4.0) | Flies by itself, survives broken sensors, one-click start and tests. **This is the current code** |
+| [v3.0](../../tree/v3.0) | Everything lives on the board: works with only the simulator's own tools, with live plots on the OLED |
+| [v2.0](../../tree/v2.0) | Position hold, and working in the real Gazebo |
+| [v1.0](../../tree/v1.0) | First flight: EKF, PID control, OLED menu, browser replica |
+
+[CHANGELOG.md](CHANGELOG.md) lists what changed in each, including the stability fixes and how each problem was found.
+
+## What is in here
+
+```
+firmware/AeroFC_R4/      the sketch: upload this to the board
+  src/core/              the flight code, plain C++ with no Arduino functions
+  src/hal/               the R4's own parts: OLED, buttons, flash, watchdog
+simulator/               the web page: fly, map, plots, faults, cameras, and the automated tests
+gazebo/                  double-click launchers, one step at a time
+tools/
+  gazebo_wsl/            Ubuntu set-up, our bridge with live telemetry, start scripts
+  flight_tests/          the flights in real Gazebo, judged by its true position
+  sitl/                  the flight code as a Linux program
+  vision/                finds the landing marker in the down camera's picture
+docs/                    the guides, and the raw test results
+START_ALL.bat            everything at one click
+RUN_ALL_TESTS.bat        every test, and a dated report
+UPLOAD_FIRMWARE.bat      build and upload, with no Arduino IDE window
+```
+
+## Guides
 
 1. [What you need](docs/01_what_you_need.md)
 2. [Wiring](docs/02_wiring.md)
 3. [Upload and first run](docs/03_upload_and_first_run.md)
-4. [Flying: keyboard, gamepad, position hold, speed modes, RC test](docs/04_flying_controls.md)
+4. [Flying: keyboard, gamepad, position hold, speed modes](docs/04_flying_controls.md)
 5. [OLED dashboard, menu and help](docs/05_oled_menu_map.md)
 6. [How it works](docs/06_how_it_works.md)
 7. [Tuning](docs/07_tuning.md)
-8. [Gazebo on Windows: launchers and PowerShell commands](docs/08_gazebo_wsl_setup.md)
-9. [Event-day checklist](docs/09_event_day_checklist.md)
+8. [Gazebo on Windows: set-up, launchers and commands](docs/08_gazebo_wsl_setup.md)
+9. [Demo checklist](docs/09_event_day_checklist.md)
 10. [Troubleshooting](docs/10_troubleshooting.md)
 11. [Test report](docs/11_test_report.md)
-12. [Hand-over sheet for the organisers' laptop](docs/12_hand_over_sheet.md)
+12. [One page for a laptop with only the simulator](docs/12_hand_over_sheet.md)
+13. [The development phases and their evidence](docs/13_phases.md)
+14. [Flying by itself: return to home, go to a point, missions](docs/14_flying_by_itself.md)
+15. [Cameras: down camera, gestures, object detection](docs/15_cameras.md)
+16. [Other boards, and how to port it](docs/16_other_boards.md)
+
+## Safety
+
+This has only ever flown in simulation. It has never been on a real airframe, and its accuracy here comes from a simulator whose GPS has no noise. Don't treat it as ready for a real drone. **Stopping the motors when someone holds the drone is for the simulation only: never catch a real drone with spinning propellers.**
+
+## Licence and credits
+
+MIT, see [LICENSE](LICENSE).
+
+- The [UAV HIL Simulator](https://github.com/Pramod-Gurav/uav-hil-simulator) and its protocol are by its own authors, and aren't included here. Our tools run its bridge unchanged.
+- [Gazebo](https://gazebosim.org) simulates the physics.
+- [MediaPipe](https://github.com/google-ai-edge/mediapipe) (Apache 2.0) does the optional gestures and object detection, downloaded by `tools/get_camera_files.py`.
+- [OpenCV](https://opencv.org) (Apache 2.0) finds the landing marker.
+- [PX4](https://px4.io) was a useful reference for how return to home and failsafes should behave. None of its code is used.

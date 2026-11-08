@@ -89,10 +89,57 @@
       <div class="kv"><span>RC link</span><b id="rcState">connected</b></div>
       <div class="kv"><span>Failsafe</span><b id="rcFs">-</b></div>
       <label class="row">If RC is lost
-        <select id="rcAction"><option value="0">LAND on the spot</option><option value="1">HOLD (hover)</option><option value="2">NONE</option></select>
+        <select id="rcAction"><option value="3">Return home, hover at 2 m</option><option value="0">LAND on the spot</option><option value="1">HOLD (hover)</option><option value="2">NONE</option></select>
       </label>
       <p class="hint" id="rcHint">Simulates a dead transmitter: no pilot packets at all. After "Link t/o" (2 s) the
-        flight controller starts its failsafe. LAND = position hold + slow landing on the spot, then disarm.</p>
+        flight controller starts its failsafe. Return home = climbs, flies home, hovers at 2 m until you move a stick
+        or someone holds it. With no GPS or compass it lands where it is.</p>
+    </section>
+
+    <section class="card" id="navCard">
+      <h2>Fly by itself</h2>
+      <canvas id="navMap" class="navmap"></canvas>
+      <div class="kv"><span>Now</span><b id="navState">-</b></div>
+      <div class="kv"><span>Clicked point</span><b id="navClicked">click the map</b></div>
+      <label class="row">Height (m) <input id="navHeight" type="number" min="0.5" max="120" step="0.5" value="3"></label>
+      <div class="grid2">
+        <button id="navGo" class="primary">Go there</button>
+        <button id="navHome">Return home (H)</button>
+        <button id="navCancel">Stop trip, hold here</button>
+        <button id="navMarker">Fly to Gazebo marker</button>
+        <button id="navLandMarker">Land on the landing pad</button>
+        <div class="kv"><span>Pad camera</span><b id="navPadSeen">-</b></div>
+      </div>
+      <h3>Mission</h3>
+      <label class="row"><input id="navAdd" type="checkbox" style="width:auto"> Clicks add mission points</label>
+      <div class="kv"><span>Points</span><b id="navPoints">0</b></div>
+      <div class="grid2">
+        <button id="navStart" class="primary alt">Start mission</button>
+        <button id="navClear">Clear points</button>
+      </div>
+      <p class="hint">Moving a stick always takes over. A mission flies its points in order, then returns home. To mark a
+        place in Gazebo itself: press T in its window, drag the red pole, press Esc, then Fly to Gazebo marker. Positions are
+        metres from the take-off point. Only as exact as the GPS, which in Gazebo has no noise.</p>
+    </section>
+
+    <section class="card" id="visionCard">
+      <h2>Cameras (optional)</h2>
+      <label class="row"><input id="gestureOn" type="checkbox" style="width:auto"> Gesture control (laptop camera)</label>
+      <div class="camview" id="gestureView" style="display:none"><video id="gestureVideo" muted playsinline></video><canvas id="gestureOverlay"></canvas></div>
+      <div class="kv"><span>Sees</span><b id="gestureState">off</b></div>
+      <p class="hint">Hold for 1 s: thumb up = take off, thumb down = land, open palm = stop the trip and hold, victory = return home.
+        No gesture can stop the motors.</p>
+      <label class="row"><input id="objectOn" type="checkbox" style="width:auto"> Object detection (C270 on the hub)</label>
+      <div class="camview" id="objectView" style="display:none"><video id="objectVideo" muted playsinline></video><canvas id="objectOverlay"></canvas></div>
+      <div class="kv"><span>Sees</span><b id="objectState">off</b></div>
+      <p class="hint">Only draws what it recognises: it doesn't steer the drone. Unticking turns the camera off completely.
+        The first time, Edge asks if the page may use the camera.</p>
+    </section>
+
+    <section class="card" id="faultCard">
+      <h2>Faults</h2>
+      <div id="faultList"></div>
+      <p class="hint">Every change is also written in the log below, and in the bridge's CSV file in Gazebo.</p>
     </section>
 
     <section class="card" id="envPanel">
@@ -187,12 +234,13 @@
         <tr><td>R / F or Up / Down</td><td>climb / descend</td></tr>
         <tr><td>Enter</td><td>arm / disarm</td></tr>
         <tr><td>T / L</td><td>take-off / land</td></tr>
+        <tr><td>H</td><td>return home</td></tr>
         <tr><td>M</td><td>manual throttle on/off</td></tr>
         <tr><td>1 / 2 / 3 (G cycles)</td><td>speed mode ECO / NORMAL / SPORT</td></tr>
         <tr><td>P</td><td>position hold on/off</td></tr>
         <tr><td>K</td><td>stick style SPEED / ANGLE</td></tr>
         <tr><td>Shift (hold)</td><td>full stick instead of 60 %</td></tr>
-        <tr><td>Space</td><td>KILL motors</td></tr>
+        <tr><td>Space or Backspace</td><td>KILL motors (in the Gazebo window only Backspace: there Space pauses Gazebo)</td></tr>
       </table>
     </div>
     <div>

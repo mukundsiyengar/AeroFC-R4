@@ -7,7 +7,8 @@ import { StripChart } from "./plots.js";
 import { SerialLink } from "./fc_webserial.js";
 import { Parser, T, decodeStatus, STATES, REASONS } from "./protocol.js";
 import { BTN, EV } from "./fc_wasm.js";
-import { linkStatus, throttleView } from "./page_status.js";
+import { linkStatus, throttleView, faultList } from "./page_status.js";
+import { NavPanel, navText, MAX_WAYPOINTS } from "./nav_panel.js";
 
 const $ = (id) => document.getElementById(id);
 const pilot = new Pilot();
@@ -25,6 +26,16 @@ let gazebo = null;        // { es: EventSource, url, since, inFlight, postStatus
 let bridgeSeen = false;   // the Gazebo bridge answers, while this page is doing something else
 let lastPilotSend = 0;
 let rcCutAt = 0;          // performance.now() when the RC link test cut the pilot stream (0 = link on)
+let keysMsgAt = 0;        // performance.now() of the web server's last message about the keys (0 = not heard)
+let keysActive = false;   // a Gazebo window is the active window, so the server is reading the keys
+
+// keys pressed in the Gazebo window: this page can't see them itself, so the web server reads them (tools/serve.py)
+new EventSource("/keys").onmessage = (e) => {
+  const m = JSON.parse(e.data);
+  keysMsgAt = performance.now();
+  keysActive = m.active;
+  pilot.setRemoteKeys(m.keys);
+};
 
 // ------------------------------------------------------------------ live plots
 const C = { r: "#e11d48", p: "#2563eb", y: "#16a34a", t: "#d97706", g: "#7c3aed", k: "#64748b" };
@@ -144,7 +155,7 @@ async function startSoftware() {
   await stopAll();
   $("log").textContent = "";
   try {
-    engine = await SimEngine.software({ storageKey: "aerofc_r4_settings", env: envFromUi() });
+    engine = await SimEngine.software({ storageKey: "aerofc_q_settings", env: envFromUi() });
   } catch (e) {
     addLog("Could not load fc.wasm: " + e.message + "  (start the page with START_SIMULATOR.bat)");
     return;
@@ -174,7 +185,7 @@ async function connectArduino() {
   speed = 1; $("simSpeed").value = "1";
   addLog("Port open. Sending HELLO to the Arduino...");
   engine.bridge.start();
-  setMode("arduino", "Arduino UNO R4 over USB (hardware in the loop)");
+  setMode("arduino", "Arduino UNO R4 Minima over USB (hardware in the loop)");
   resync();
 }
 
@@ -236,7 +247,7 @@ $("camBtn").onclick = () => { view.camMode = view.camMode === "chase" ? "ground"
 
 const cmd = (code) => {
   if (engine) engine.command(code);
-  else if (gazebo) sendGazebo({ thr: code, roll: 0, pitch: 0, yaw: 0 }, true);
+  else if (gazebo) pilot.commands.push(code);          // sent with the keys' commands, see servicePilotInput
 };
 $("cmdArm").onclick = () => cmd(status && status.armed ? CODES.DISARM : CODES.ARM);
 $("cmdTakeoff").onclick = () => cmd(CODES.TAKEOFF);
@@ -247,6 +258,92 @@ $("cmdStop").onclick = () => engine && engine.bridge.sendStop();
 document.querySelectorAll("#speedSeg button").forEach((b) => { b.onclick = () => cmd(+b.dataset.code); });
 $("cmdPosHold").onclick = () => cmd(CODES.POSHOLD);
 $("cmdStick").onclick = () => cmd(CODES.STICK);
+
+// ------------------------------------------------------------------ flying by itself
+// a command that carries numbers: the flight controller takes them as a target, not as sticks
+function sendNumbers(thr, roll, pitch, yaw) {
+  if (engine) engine.pilotCodes.push([thr, roll, pitch, yaw]);
+  else if (gazebo) for (let i = 0; i < 3; i++) codeQueue.push({ thr, roll, pitch, yaw });
+}
+const navHeight = () => Math.max(0.5, +$("navHeight").value || 3);
+const sendGoto = (north, east) => {
+  sendNumbers(CODES.GOTO, north, east, navHeight());
+  addLog(`Go to ${north.toFixed(1)} m north, ${east.toFixed(1)} m east, ${navHeight().toFixed(1)} m up`);
+};
+function showPoints() { $("navPoints").textContent = String(nav.points.length); }
+const nav = new NavPanel($("navMap"), (p) => {
+  if ($("navAdd").checked) {
+    if (nav.points.length < MAX_WAYPOINTS) nav.points.push({ ...p, height: navHeight() });
+    showPoints();
+  } else {
+    nav.target = p;
+    $("navClicked").textContent = `${p.north.toFixed(1)} m N, ${p.east.toFixed(1)} m E`;
+  }
+});
+$("navGo").onclick = () => { if (nav.target) sendGoto(nav.target.north, nav.target.east); };
+$("navHome").onclick = () => cmd(CODES.RTH);
+$("navCancel").onclick = () => cmd(CODES.NAV_CANCEL);
+$("navLandMarker").onclick = () => {
+  if (status && status.markerSeen) cmd(CODES.MARKER_LAND);
+  else addLog("The camera doesn't see the landing pad: fly over it first (the camera world: START_ALL camera)");
+};
+$("navStart").onclick = () => {
+  if (!nav.points.length) return;
+  cmd(CODES.MISSION_CLEAR);
+  nav.points.forEach((p, i) => sendNumbers(CODES.WAYPOINT, p.north, p.east, p.height + 1000 * i));
+  cmd(CODES.MISSION_START);
+  addLog(`Mission: ${nav.points.length} points`);
+};
+$("navClear").onclick = () => { nav.points = []; nav.trail = []; showPoints(); };
+// the red pole in Gazebo's world: the bridge asks Gazebo where it is now
+$("navMarker").onclick = async () => {
+  if (!gazebo) { addLog("The Gazebo marker only exists when flying in Gazebo"); return; }
+  try {
+    const m = await (await fetch(gazebo.url + "/marker")).json();
+    if (!status || status.homeN === undefined) return;
+    sendGoto(m.north - status.homeN, m.east - status.homeE);
+  } catch (e) { addLog("Could not ask Gazebo where the marker is: " + e.message); }
+};
+
+// ------------------------------------------------------------------ the laptop's cameras (optional, off by default)
+let visionModule = null;
+const panels = {};
+async function setCamera(kind, on) {
+  const box = $(kind + "On");
+  try {
+    visionModule = visionModule || await import("./vision.js");
+    if (kind === "gesture") {
+      panels.gesture = panels.gesture || new visionModule.GesturePanel($("gestureVideo"), $("gestureOverlay"), cmd, (t) => { $("gestureState").textContent = t; }, addLog);
+    } else {
+      panels.object = panels.object || new visionModule.ObjectPanel($("objectVideo"), $("objectOverlay"), (t) => { $("objectState").textContent = t; }, addLog);
+    }
+    $(kind + "View").style.display = on ? "" : "none";
+    if (on) await panels[kind].start();
+    else panels[kind].stop();
+  } catch (e) {
+    addLog(`Camera problem: ${e.message}`);
+    $(kind + "State").textContent = "camera problem: " + e.message;
+    $(kind + "View").style.display = "none";
+    box.checked = false;
+  }
+}
+$("gestureOn").onchange = () => setCamera("gesture", $("gestureOn").checked);
+$("objectOn").onchange = () => setCamera("object", $("objectOn").checked);
+
+const faultWas = {};
+function updateFaults(s, age) {
+  const rows = faultList(s, age);
+  const box = $("faultList");
+  if (box.children.length !== rows.length) box.innerHTML = rows.map(() => '<div class="fault"><span></span><b></b></div>').join("");
+  rows.forEach((r, i) => {
+    const el = box.children[i];
+    el.className = "fault" + (r.bad ? " bad" : "");
+    el.children[0].textContent = r.name;
+    el.children[1].textContent = r.text;
+    if (faultWas[r.name] !== undefined && faultWas[r.name] !== r.bad) addLog(`${r.bad ? "FAULT" : "cleared"}: ${r.name}: ${r.text}`);
+    faultWas[r.name] = r.bad;
+  });
+}
 
 // ------------------------------------------------------------------ RC link test
 function setRcCut(on) {
@@ -293,6 +390,7 @@ function setupOledButtons() {
 }
 setupOledButtons();
 
+const OLED_BLANK = new Uint8Array(1024);
 function drawOled(fb) {
   const cv = $("oled");
   const g = cv.getContext("2d");
@@ -318,10 +416,8 @@ function postControl(o) {
   fetch(g.url + "/control", { method: "POST", body: `${o.thr},${o.roll},${o.pitch},${o.yaw}\n`, headers: { "Content-Type": "text/plain" } })
     .then((r) => done(r.status), () => done(0));
 }
-function sendGazebo(o, isCode = false) {
-  if (!gazebo) return;
-  if (isCode) { postControl(o); setTimeout(() => postControl(o), 40); setTimeout(() => postControl(o), 80); }
-  else if (gazebo.inFlight < 3) postControl(o);         // bridge busy: the next stick packet is only 40 ms away, don't pile up
+function sendGazebo(o) {
+  if (gazebo && gazebo.inFlight < 3) postControl(o);    // bridge busy: the next stick packet is only 40 ms away, don't pile up
 }
 
 // ------------------------------------------------------------------ simulation clock (worker metronome)
@@ -346,10 +442,14 @@ metronome.postMessage("start");
 // Runs on the metronome, not in the animation loop: animation frames stop when the page is hidden, and the last stick
 // values would keep flying the drone. Hidden page = nobody is flying = neutral sticks.
 let lastPilotRead = performance.now();
+const codeQueue = [];     // command packets waiting to go to Gazebo
+let codeWaitFrom = 0;
 function servicePilotInput(now) {
   if (now - lastPilotRead < 19) return;
   const dt = Math.min(0.1, (now - lastPilotRead) / 1000);
   lastPilotRead = now;
+  // the server stopped, so nobody sees a held key go up: it must not keep flying the drone
+  if (keysMsgAt && now - keysMsgAt > 600) { keysMsgAt = 0; keysActive = false; pilot.setRemoteKeys([]); }
   pilot.armed = !!(status && status.armed);
   if (status && status.version === 2) pilot.speedMode = status.speedMode;
   const out = pilot.update(dt, document.hidden);
@@ -358,8 +458,16 @@ function servicePilotInput(now) {
     engine.setPilot(out);
     codes.forEach((c) => engine.command(c));
   } else if (gazebo && !rcCutAt) {
-    codes.forEach((c) => sendGazebo({ thr: c, roll: out.roll, pitch: out.pitch, yaw: out.yaw }, true));
-    if (now - lastPilotSend > 35) { lastPilotSend = now; sendGazebo(out); }
+    // A command goes out three times in case one is lost, with no stick packet between the copies: the flight controller
+    // takes the copies as one command only if nothing comes between them, or P and K would switch two or three times.
+    codes.forEach((c) => { for (let i = 0; i < 3; i++) codeQueue.push({ thr: c, roll: out.roll, pitch: out.pitch, yaw: out.yaw }); });
+    if (codeQueue.length) {
+      // a stick packet still on its way could arrive between the copies, so let it land first (but never wait long)
+      if (!gazebo.inFlight || now - codeWaitFrom > 100) { postControl(codeQueue.shift()); codeWaitFrom = now; }
+    } else {
+      codeWaitFrom = now;
+      if (now - lastPilotSend > 35) { lastPilotSend = now; sendGazebo(out); }
+    }
   }
 }
 
@@ -371,7 +479,8 @@ function frame() {
     engine.fc.serviceStorage();
     const fb = engine.fc.render(engine.nowUs());
     if (fb) lastFb = fb;
-    if (lastFb) drawOled(lastFb);
+    if (!engine.fc.displayOn()) drawOled(OLED_BLANK);   // the display-off timer: a real panel goes dark too
+    else if (lastFb) drawOled(lastFb);
   }
 
   // drone pose for the 3D view: truth from the physics, or the FC's own estimate in telemetry-only modes
@@ -457,6 +566,10 @@ function updatePanels(s) {
   $("cmdArm").textContent = s && s.armed ? "Disarm (Enter)" : "Arm (Enter)";
   updatePosPanel(s);
   updateRcPanel(s);
+  nav.update(s);
+  $("navState").textContent = navText(s);
+  $("navPadSeen").textContent = s && s.markerSeen ? "sees the marker" : "no marker in view";
+  updateFaults(s, age);
   updateDiagnostics(s, o);
   updateLinkBanner(s);
   updateThrottleCard(s);
@@ -471,6 +584,7 @@ function updateLinkBanner(s) {
     telemetryAge: s ? (now - statusTime) / 1000 : 99,
     pilotHz: s ? s.pilotHz : 0,
     rcCut: !!rcCutAt, hidden: document.hidden, focused: document.hasFocus(), pad: !!pilot.gamepadName,
+    keysHelper: !!keysMsgAt, keysActive, oldFirmware: !!(s && s.version === 2 && s.navKind === undefined),
   });
   $("linkBanner").style.display = st ? "" : "none";
   if (!st) return;
@@ -560,7 +674,8 @@ function updateRcPanel(s) {
   }
   let fs = "-";
   if (s) {
-    if (s.failsafe) fs = `${s.stateName} (${s.reasonName})${s.posActive ? ", holding position" : ""}`;
+    if (s.navKindName === "RTH" && s.reasonName === "pilot link") fs = `going home: ${s.navStageName}`;
+    else if (s.failsafe) fs = `${s.stateName} (${s.reasonName})${s.posActive ? ", holding position" : ""}`;
     else if (s.reasonName === "pilot link" && !s.armed) fs = "landed and disarmed (pilot link)";
     else if (s.linkLost) fs = "link lost (RC lost action NONE)";
   }

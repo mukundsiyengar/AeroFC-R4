@@ -1,6 +1,6 @@
 # 4. Flying: keyboard, gamepad, position hold, speed modes, RC test
 
-Start the simulator with `START_SIMULATOR.bat`, then press **Fly the software FC** (or **Connect Arduino R4**). Click once on the page so it receives the keys.
+Start the simulator with `START_SIMULATOR.bat`, then press **Fly the software FC** (or **Connect Arduino R4**). Click once on the page so it receives the keys. When you fly in Gazebo (launchers 3 and 4, docs/08), the keys also work in the Gazebo window, with no click on the page.
 
 ## Keyboard (hold the keys; the "sticks" spring back when you let go)
 
@@ -18,7 +18,8 @@ Start the simulator with `START_SIMULATOR.bat`, then press **Fly the software FC
 | **T** | take-off to the take-off height (1.5 m) |
 | **L** | land (it disarms itself when it touches down) |
 | **M** | manual throttle on/off (R/F then change the throttle) |
-| **Space** | **KILL**: motors off immediately |
+| **H** | return to home (docs/14) |
+| **Space** or **Backspace** | **KILL**: motors off immediately. In the Gazebo window use **Backspace**, because there Space is Gazebo's own pause key |
 
 ## Gamepad (Xbox layout; PlayStation names in brackets), "mode 2"
 
@@ -63,7 +64,7 @@ The drone uses GPS + compass + IMU to know where it is and how fast it moves.
 
   Until it is ready the drone flies like ANGLE mode with position hold off.
 - **It works during** take-off, hover, landing and the failsafe landing, so landings are on the spot.
-- **Safety check:** if the drone is far from its spot and keeps getting further for 3 s, position hold switches itself off (FAILED). After 5 s it tries again by itself: it brakes and holds where it stops. After 3 failures in a row it stays off until the next arm.
+- **Safety check:** position hold switches itself off (FAILED) if the drone is far from its spot and keeps getting further for 3 s, or if it gets faster for 0.5 s while it should be braking. After 2 s it tries again by itself: it brakes and holds where it stops. After 3 failures in a row it stays off until the next arm.
 - **Compass error:** Gazebo's compass points 90.8° away from GPS north ("Mag decl" is set to 90.8 for that). If the compass is wrong anyway, the flight controller learns the error from GPS during the first move (tested from −76° to 180°).
 
 ## Speed modes (Flight → Speed, keys 1/2/3, gamepad X)
@@ -113,10 +114,11 @@ In the simulator page, card **4. RC link test**:
 1. Fly and hover (position hold on).
 2. Press **Cut RC link**. The page stops sending pilot packets (a dead transmitter). The card counts down: "failsafe in 1.2 s".
 3. After **Link t/o** (2 s) the flight controller starts the failsafe:
-   - **LAND** (default): holds the position and lands slowly on the spot, then disarms. Reason: **pilot link**.
+   - **RTH** (default): flies home and hovers at 2 m (docs/14). Reason: **pilot link**.
+   - **LAND**: holds the position and lands slowly on the spot, then disarms.
    - **HOLD**: hovers on the spot at the same height until the link comes back.
    - **NONE**: does nothing (not recommended).
-4. **Restore RC link** gives you control back (HOLD case).
+4. **Restore RC link** gives you control back in the HOLD case. With RTH it carries on home until you move a stick.
 
 Choose the action in the card (software FC) or on the board: **MENU → Failsafe → RC lost**. The same button works in Gazebo mode (it stops sending to the bridge).
 
@@ -130,7 +132,7 @@ Choose the action in the card (software FC) or on the board: **MENU → Failsafe
 
   | Situation | What happens |
   |---|---|
-  | Pilot input stops for 2 s (only with a continuous pilot stream, like our page's) | RC lost action: LAND / HOLD / NONE |
+  | Pilot input stops for 2 s, comes under 5 times a second for 2 s, or isn't valid numbers (only with a continuous pilot stream, like our page's) | RC lost action: RTH / LAND / HOLD / NONE |
   | Sensor data stops for 1.5 s | disarm |
   | Estimator fault | restart the estimator + landing |
   | **Crash** (tilted more than 70° for 0.2 s, or an impact while tilted) | motors off (switchable) |

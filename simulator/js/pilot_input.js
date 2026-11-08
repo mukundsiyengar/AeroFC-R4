@@ -5,7 +5,8 @@
 // Keyboard (hold keys, the sticks spring back when released):
 //   W / S  forward / back       A / D  left / right        Q / E  turn left / right
 //   R / F  climb / descend (also Arrow Up / Down)          Arrow Left / Right  turn
-//   Enter  arm / disarm         T take-off     L land      M  manual-throttle mode on/off      Space  KILL
+//   Enter  arm / disarm         T take-off     L land      M  manual-throttle mode on/off     H  return home
+//   Space or Backspace  KILL (in the Gazebo window only Backspace: there Space is Gazebo's own pause key)
 //   1 / 2 / 3  speed mode ECO / NORMAL / SPORT (G = next)    P  position hold on/off    K  stick style SPEED/ANGLE
 //   hold Shift = full stick (otherwise the keys give 60 %)
 // Gamepad (standard / Xbox layout, mode 2):
@@ -14,7 +15,8 @@
 //   Y (triangle) = manual mode    X (square) = next speed mode    RB (R1) = position hold on/off
 //   hold Back (Share) 0.5 s = KILL
 // Keyboard and gamepad work together: a pressed movement key overrides the gamepad on that axis.
-export const CODES = { ARM: 10, DISARM: 11, TAKEOFF: 12, LAND: 13, KILL: 16, ECO: 17, NORMAL: 18, SPORT: 19, POSHOLD: 20, STICK: 21 };
+export const CODES = { ARM: 10, DISARM: 11, TAKEOFF: 12, LAND: 13, KILL: 16, ECO: 17, NORMAL: 18, SPORT: 19, POSHOLD: 20, STICK: 21,
+  RTH: 22, GOTO: 23, VISION: 24, WAYPOINT: 25, MISSION_START: 26, MISSION_CLEAR: 27, NAV_CANCEL: 28, MARKER_LAND: 29 };
 const SPEED_CODES = [CODES.ECO, CODES.NORMAL, CODES.SPORT];
 // Thumbsticks often rest off-centre after use. Microsoft's guidance for Xbox sticks is a deadzone of 0.24-0.27:
 // anything smaller reads a resting stick as a small push, and the drone drifts instead of holding its position.
@@ -35,6 +37,7 @@ const shape = (v, db, expo) => {
 export class Pilot {
   constructor() {
     this.keys = new Set();
+    this.remoteKeys = new Set();   // those of the keys that the web server read in the Gazebo window (setRemoteKeys)
     this.sticks = { roll: 0, pitch: 0, yaw: 0, climb: 0 };
     this.manual = false;
     this.manualCmd = 0.66;
@@ -61,21 +64,39 @@ export class Pilot {
     target.addEventListener("keydown", (e) => {
       if (!this.enabled || e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
       const k = e.key.toLowerCase();
-      if (["w", "a", "s", "d", "q", "e", "r", "f", "arrowup", "arrowdown", "arrowleft", "arrowright", " ", "enter"].includes(k)) e.preventDefault();
+      if (["w", "a", "s", "d", "q", "e", "r", "f", "arrowup", "arrowdown", "arrowleft", "arrowright", " ", "backspace", "enter"].includes(k)) e.preventDefault();
       if (e.repeat) return;
-      this.keys.add(k);
-      if (k === "enter") this.commands.push(this.armed ? CODES.DISARM : CODES.ARM);
-      if (k === "t") this.commands.push(CODES.TAKEOFF);
-      if (k === "l") this.commands.push(CODES.LAND);
-      if (k === " ") this.commands.push(CODES.KILL);
-      if (k === "m") this.toggleManual();
-      if (k === "1" || k === "2" || k === "3") this.commands.push(SPEED_CODES[+k - 1]);
-      if (k === "g") this.nextSpeed();
-      if (k === "p") this.commands.push(CODES.POSHOLD);
-      if (k === "k") this.commands.push(CODES.STICK);
+      this.pressKey(k);
     });
     target.addEventListener("keyup", (e) => this.keys.delete(e.key.toLowerCase()));
-    target.addEventListener("blur", () => this.keys.clear());
+    target.addEventListener("blur", () => this.dropPageKeys());
+  }
+
+  pressKey(k) {
+    this.keys.add(k);
+    if (k === "enter") this.commands.push(this.armed ? CODES.DISARM : CODES.ARM);
+    if (k === "t") this.commands.push(CODES.TAKEOFF);
+    if (k === "l") this.commands.push(CODES.LAND);
+    if (k === "h") this.commands.push(CODES.RTH);
+    if (k === " " || k === "backspace") this.commands.push(CODES.KILL);
+    if (k === "m") this.toggleManual();
+    if (k === "1" || k === "2" || k === "3") this.commands.push(SPEED_CODES[+k - 1]);
+    if (k === "g") this.nextSpeed();
+    if (k === "p") this.commands.push(CODES.POSHOLD);
+    if (k === "k") this.commands.push(CODES.STICK);
+  }
+
+  // keys pressed in the Gazebo window, which this page can't see itself: the web server reads them (tools/serve.py)
+  setRemoteKeys(names) {
+    const down = new Set(this.enabled ? names : []);
+    for (const k of down) if (!this.remoteKeys.has(k)) this.pressKey(k);
+    for (const k of this.remoteKeys) if (!down.has(k)) this.keys.delete(k);
+    this.remoteKeys = down;
+  }
+
+  // this page stopped getting key events, so it would never see these keys go up
+  dropPageKeys() {
+    for (const k of this.keys) if (!this.remoteKeys.has(k)) this.keys.delete(k);
   }
 
   nextSpeed() { this.commands.push(SPEED_CODES[(this.speedMode + 1) % 3]); }
@@ -86,9 +107,10 @@ export class Pilot {
     this.manualKb = false;
   }
 
-  // hidden = the page is not visible: nobody is flying, so the sticks go to neutral (position hold takes over)
+  // hidden = the page is not visible: nobody is flying on it, so its own keys and the gamepad go to neutral (position hold
+  // takes over). Keys pressed in the Gazebo window still count.
   update(dt, hidden = false) {
-    if (hidden) this.keys.clear();
+    if (hidden) this.dropPageKeys();
     const gp = hidden ? null : this.getPads().find((p) => p.connected && p.axes.length >= 4);
     let padT = null;
     this.padRaw = null;

@@ -2,7 +2,10 @@
 import { SimEngine, CODES } from "./sim_engine.js";
 import { crc32, buildPacket, Parser, T } from "./protocol.js";
 import { Pilot, PAD_DEADZONE } from "./pilot_input.js";
-import { linkStatus, throttleView } from "./page_status.js";
+import { Rng } from "./physics_x3.js";
+import { linkStatus, throttleView, faultList } from "./page_status.js";
+import { mapToMetres, metresToMap, mapRange, navText } from "./nav_panel.js";
+import { GestureGate, GESTURE_ACTIONS, chooseCamera } from "./vision_logic.js";
 
 const wrap180 = (a) => { while (a > 180) a -= 360; while (a < -180) a += 360; return a; };
 
@@ -380,7 +383,7 @@ export const SCENARIOS = [
       e.run(0.3);
       c.ok(e.info().state === 0 && e.info().reason === 7, "KILL code -> motors off");
       // 4) pilot link loss: our 25 Hz stream stops for > 2 s -> automatic landing
-      e = await airborne();
+      e = await airborne({ params: { "RC lost": 0 } });
       e.run(1.5);
       c.ok(e.info().streamSeen, "pilot stream detected");
       e.pilotMode = "off";
@@ -643,7 +646,7 @@ export const SCENARIOS = [
   {
     name: "RC link lost: LAND lands on the spot, HOLD hovers, link back = control back",
     async run(c) {
-      let e = await airborne({ env: { wind: [3, 0, 0] } });
+      let e = await airborne({ env: { wind: [3, 0, 0] }, params: { "RC lost": 0 } });
       e.run(2);
       const p0 = e.phys.truth();
       e.rcCut = true;
@@ -1209,6 +1212,161 @@ export const SCENARIOS = [
     },
   },
   {
+    name: "Display off: after the set time on the ground, never while armed; the first press only wakes; alarms wake it",
+    async run(c) {
+      // on the bench: the timer, the first press, the settings
+      const e = await SimEngine.software();
+      const fc = e.fc;
+      let t = 1000000;
+      const R = (secs) => { t += secs * 1e6; return fc.render(t); };
+      const titleBar = (fb) => Array.from(fb.slice(0, 128)).join(",");
+      const home = R(0);
+      c.ok(home && fc.displayOn(), "on after power-up");
+      c.ok(fc.get("Disp off") === 4, "the default is 2 min");
+      R(119);
+      c.ok(fc.displayOn(), "still on after 119 s");
+      c.ok(R(2) === null && !fc.displayOn(), "off after 121 s, and nothing is drawn");
+      c.ok(R(5) === null && !fc.displayOn(), "stays off");
+      fc.button(2, 1, t);
+      c.ok(fc.displayOn(), "a button wakes it");
+      const woken = R(0.2);
+      c.ok(woken && titleBar(woken) === titleBar(home), "that press does nothing else: SELECT didn't open the menu");
+      fc.button(2, 1, t);
+      c.ok(titleBar(R(0.2)) !== titleBar(home), "the next press works: SELECT opens the menu");
+      fc.button(3, 1, t);
+      c.ok(titleBar(R(0.2)) === titleBar(home), "BACK returns to the dashboard");
+      const pressAt = t;
+      R(119);
+      c.ok(fc.displayOn(), "the timer counts from the last press");
+      R(2);
+      c.ok(!fc.displayOn(), "off again 2 min after it");
+      c.metric("seconds since the last press", (t - pressAt) / 1e6);
+      fc.button(1, 2, t);
+      c.ok(fc.displayOn(), "a long press wakes it too");
+      fc.button(1, 3, t + 500000);
+      c.ok(titleBar(R(0.7)) === titleBar(home), "holding the same button doesn't change the page while it wakes");
+      fc.button(1, 3, t + 2000000);
+      t += 2000000;
+      c.ok(titleBar(R(0.2)) !== titleBar(home), "after that, a held button works as usual");
+      fc.set("Disp off", 0);
+      R(4000);
+      c.ok(fc.displayOn(), "Never: still on after over an hour");
+      fc.set("Disp off", 1);
+      fc.button(1, 1, t);                         // changing it in the menu takes button presses, and they restart the timer
+      R(14);
+      c.ok(fc.displayOn(), "15 s: on at 14 s");
+      R(2);
+      c.ok(!fc.displayOn(), "15 s: off at 16 s");
+      fc.button(0, 1, t);
+      fc.set("Disp off", 6);
+      const n = fc.x.fc_settings_pack();
+      fc.set("Disp off", 2);
+      c.ok(n > 0 && fc.x.fc_settings_unpack(n) === 1 && fc.get("Disp off") === 6, "the setting is saved with the others");
+      const names = fc.helpTexts().map((h) => h.title);
+      c.ok(names.includes("Disp off") && names.includes("Display off"), "it has a help text and a help topic");
+
+      // flying: 15 s setting, far longer than that in the air
+      const f = await airborne({ params: { "Disp off": 1 } });
+      const on = () => { f.fc.render(f.nowUs()); return f.fc.displayOn(); };
+      let alwaysOn = true;
+      f.run(40, () => { alwaysOn = on() && alwaysOn; }, 0.2);
+      c.ok(alwaysOn, "flying for 40 s with a 15 s setting: stays on");
+      f.command(CODES.LAND);
+      f.until((s) => { on(); return s.info().state === 0; }, 20);   // the board draws all the time
+      f.run(10, () => { alwaysOn = on() && alwaysOn; }, 0.2);
+      c.ok(alwaysOn, "on the ground: still on 10 s after landing");
+      f.run(7, () => on(), 0.2);
+      c.ok(!f.fc.displayOn(), "off 17 s after landing");
+      f.command(CODES.TAKEOFF);
+      f.until((s) => s.info().state !== 0, 5);
+      c.ok(on(), "arming wakes it");
+      // a press while armed always counts: hold BACK is KILL, on every screen
+      f.until((s) => s.info().state === 3, 12);
+      f.fc.button(3, 2, f.nowUs());
+      f.run(0.3);
+      c.ok(f.info().state === 0 && f.info().reason === 7, "KILL still works in flight");
+
+      // an alarm on the ground
+      const g = await airborne({ params: { "Disp off": 1 } });
+      g.run(1.5);
+      const gOn = () => { g.fc.render(g.nowUs()); return g.fc.displayOn(); };
+      g.command(CODES.LAND);
+      g.until((s) => { gOn(); return s.info().state === 0; }, 20);
+      g.run(17, () => gOn(), 0.2);
+      c.ok(!g.fc.displayOn(), "ground: it has turned off");
+      g.rcCut = true;
+      let woke = false;
+      g.run(4, () => { woke = gOn() || woke; }, 0.2);
+      c.ok(woke, "the RC link is lost: an alarm wakes it");
+      g.run(17, () => gOn(), 0.2);
+      c.ok(!g.fc.displayOn(), "and it can turn off again, or it would stay on for good");
+    },
+  },
+  {
+    name: "A restarted world after a turn: takes off again and position hold works (the compass fault itself needs the real board)",
+    async run(c) {
+      const e = await airborne();
+      e.setPilot({ yaw: 1 });                  // turn well away from where a restarted world will start
+      e.run(2);
+      e.setPilot({ yaw: 0 });
+      e.run(2);
+      c.metric("heading before the restart", wrap180(e.phys.truth().yaw ?? 0), "deg");
+      e.command(CODES.LAND);
+      e.until((s) => s.info().state === 0, 20);
+      e.bridge.running = false;                // Ctrl+C on the bridge and Gazebo: no sensors
+      e.run(3);
+      e.phys.reset();                          // Gazebo starts again, the drone back at its start
+      e.bridge.start();
+      const t = e.until((s) => { const i = s.info(); return i.state === 3 && Math.abs(i.alt - 1.5) < 0.15; }, 15);
+      c.ok(t > 0, "takes off again by itself");
+      e.run(3);
+      c.metric("position hold state 3 s after take-off (4 = HOLDING)", e.info().posState);
+      c.ok(e.info().posState === 4, "position hold is ready straight away, with no first move needed");
+      // a re-handshake in flight changes nothing
+      const f = await airborne();
+      const alt0 = f.info().alt;
+      f.bridge.start();
+      f.run(2);
+      c.ok(f.info().state === 3 && Math.abs(f.info().alt - alt0) < 0.2, "a new handshake while flying doesn't touch the estimators");
+    },
+  },
+  {
+    name: "With nobody listening the board stays quiet: nothing waits on the way for the next bridge",
+    async run(c) {
+      // HELLO comes from the bridge first, so a board that has heard nothing says nothing
+      const fresh = await SimEngine.software();
+      let t = 1000000, sent = 0;
+      const bytes = (fc, secs) => {
+        let n = 0;
+        for (let i = 0; i < secs * 100; i++) { t += 10000; fc.tick(t); const o = fc.poll(t); if (o) n += o.length; }
+        return n;
+      };
+      sent = bytes(fresh.fc, 600);
+      c.metric("10 minutes after power-up with no bridge", sent, "bytes sent");
+      c.ok(sent === 0, "no bridge yet: sends nothing");
+      // a bridge that goes away in flight: a few packets, then silence
+      const e = await airborne();
+      const fc = e.fc;
+      t = e.nowUs() + 1000;
+      e.fc = null;
+      const first = bytes(fc, 5);
+      const after = bytes(fc, 60);
+      c.metric("after the bridge stops: first 5 s / next 60 s", `${first} / ${after} bytes`);
+      c.ok(first < 2500, "a bridge stops: only a few packets go out");
+      c.ok(after === 0, "then nothing at all");
+      // the next bridge finds it at once
+      const f = await engine();
+      const tt = f.until((s) => { const i = s.info(); return i.state === 3 && Math.abs(i.alt - 1.5) < 0.1; }, 15);
+      c.ok(tt > 0, "the next bridge starts it as usual");
+      // a bridge that timed out ignores motor commands until it gets a HELLO: the first one goes out when it is heard again
+      e.fc = fc;
+      e.toFc = [];
+      e.bridge.running = false;
+      e.run(3);
+      c.ok(e.bridge.log.some((l) => l.includes("Arduino sent HELLO during session")), "heard again: it sends HELLO, and the bridge starts again");
+    },
+  },
+  {
     name: "Page says if commands really reach the flight controller; launchers open it in Gazebo mode",
     async run(c) {
       const base = { mode: "gazebo", bridgeSeen: true, relay: "http://localhost:8770", connectedFor: 100, postStatus: 200, telemetryAge: 0.1, pilotHz: 25, rcCut: false, hidden: false, focused: true, pad: false };
@@ -1226,7 +1384,12 @@ export const SCENARIOS = [
       c.ok(say({ pilotHz: 0 }).level === "wait", "commands not counted yet: waits");
       c.ok(say({ focused: false }).text.includes("Click on this page"), "keyboard elsewhere: asks for a click");
       c.ok(say({ focused: false, pad: true }).level === "ok", "gamepad: no click needed");
+      c.ok(say({ focused: false, keysHelper: true, keysActive: true }).level === "ok", "the server reads the keys in the Gazebo window: no click needed");
+      c.ok(say({ hidden: true, keysHelper: true, keysActive: true }).level === "ok", "the same with the page covered by Gazebo");
+      c.ok(say({ hidden: true }).text.includes("hidden"), "covered, without the server reading the keys: says so");
+      c.ok(say({ focused: false, keysHelper: true, keysActive: false }).text.includes("another program"), "another program active: says keys are off");
       c.ok(say({ rcCut: true }).text.includes("cut the RC link"), "RC link test: says so");
+      c.ok(say({ oldFirmware: true }).level === "bad" && say({ oldFirmware: true }).text.includes("older firmware"), "the board has the older firmware: says so");
       // the launchers must not hand "?mode=gazebo" to a batch file: it splits at "=" and the page loses its mode
       for (const f of ["3_FLY_ARDUINO_in_Gazebo", "4_FLY_SOFTWARE_FC_in_Gazebo"]) {
         const bat = await (await fetch(`../gazebo/${f}.bat`)).text();
@@ -1262,6 +1425,746 @@ export const SCENARIOS = [
       e.rcCut = true;
       e.run(1.5);
       c.ok(s.pilotHz === 0, "commands stop: the count goes to 0 instead of keeping the old value");
+    },
+  },
+  {
+    name: "Keys pressed in the Gazebo window work like keys on the page, with no click",
+    async run(c) {
+      const p = new Pilot();
+      p.setRemoteKeys(["w"]);
+      p.update(1);
+      c.ok(p.sticks.pitch === -0.6, "W in the Gazebo window: the same stick as W on the page");
+      p.setRemoteKeys(["w", "shift"]);
+      p.update(1);
+      c.ok(p.sticks.pitch === -1, "with Shift: full stick");
+      p.update(1, true);
+      c.ok(p.sticks.pitch === -1, "the page covered by Gazebo: the keys still count");
+      p.setRemoteKeys([]);
+      p.update(1);
+      c.ok(p.sticks.pitch === 0, "let go: the stick centres");
+      p.setRemoteKeys(["l"]);
+      p.setRemoteKeys(["l"]);
+      p.setRemoteKeys([]);
+      c.ok(JSON.stringify(p.takeCommands()) === JSON.stringify([CODES.LAND]), "L held down: one landing command");
+      p.setRemoteKeys(["backspace"]);
+      p.setRemoteKeys([]);
+      c.ok(JSON.stringify(p.takeCommands()) === JSON.stringify([CODES.KILL]), "Backspace: KILL (in that window Space is Gazebo's own pause key)");
+      p.keys.add("w");
+      p.update(1, true);
+      c.ok(!p.keys.has("w"), "a key held on the page is dropped when the page is covered: it would never see the key go up");
+      p.setRemoteKeys(["a"]);
+      p.dropPageKeys();
+      c.ok(p.keys.has("a"), "leaving the page doesn't drop a key held in the Gazebo window");
+      p.setRemoteKeys([]);
+      p.enabled = false;
+      p.setRemoteKeys(["w"]);
+      c.ok(!p.keys.has("w"), "input switched off: ignored");
+      const first = await new Promise((done) => {
+        const es = new EventSource("/keys");
+        es.onmessage = (ev) => { es.close(); done(JSON.parse(ev.data)); };
+        es.onerror = () => { es.close(); done(null); };
+      });
+      c.ok(first && typeof first.active === "boolean" && Array.isArray(first.keys), "the web server answers at /keys");
+    },
+  },
+  {
+    name: "Return to home: RC lost from any direction, home at 2 m, stays there",
+    async run(c) {
+      let worstD = 0, worstH = 0, slowest = 0, worstTilt = 0;
+      for (const [n, ea] of [[30, 0], [21, 21], [0, 30], [-21, 21], [-30, 0], [-21, -21], [0, -30], [21, -21]]) {
+        const e = await airborne();
+        const home = e.phys.truth();
+        e.goTo(n, ea, 3);
+        e.until((s) => s.info().navKind === 1, 2);
+        c.ok(e.until((s) => s.info().navKind === 0 && s.info().state === 3, 40) > 0, `went ${n}, ${ea} first`);
+        e.rcCut = true;
+        const lost = e.until((s) => s.info().navKind === 3, 5);
+        const t = e.until((s) => s.info().navStage === 5, 60, (s) => { worstTilt = Math.max(worstTilt, s.info().tilt); });
+        c.ok(lost > 1.5 && lost < 3 && t > 0, `${n}, ${ea}: RC lost starts it after the timeout, and it reaches the hover`);
+        slowest = Math.max(slowest, t);
+        let d = 0, h = 0;
+        e.run(10, (s) => {
+          const tr = s.phys.truth();
+          d = Math.max(d, Math.hypot(tr.north - home.north, tr.east - home.east));
+          h = Math.max(h, Math.abs(tr.alt - 2));
+        }, 0.1);
+        worstD = Math.max(worstD, d);
+        worstH = Math.max(worstH, h);
+        c.ok(e.info().state === 6 && e.info().navKind === 3 && e.info().reason === 2, `${n}, ${ea}: still there, hovering, and it says why`);
+      }
+      c.metric("worst distance from home / from 2 m / slowest trip / most tilt", `${worstD.toFixed(3)} m / ${worstH.toFixed(3)} m / ${slowest.toFixed(1)} s / ${worstTilt.toFixed(1)} deg`);
+      c.ok(worstD < 0.5, "within 0.5 m of home from all eight directions");
+      c.ok(worstH < 0.1, "holds 2 m within 0.1 m");
+    },
+  },
+  {
+    name: "Return to home: climbs first if low, keeps its height if high, turns to face home",
+    async run(c) {
+      let e = await airborne();
+      e.goTo(20, 0, 1.5);
+      e.until((s) => s.info().navKind === 1, 2);
+      e.until((s) => s.info().navKind === 0 && s.info().state === 3, 30);
+      const start = e.phys.truth();
+      e.command(CODES.RTH);
+      e.until((s) => s.info().navStage === 1, 2);
+      let side = 0;
+      const climb = e.until((s) => s.info().navStage !== 1, 30, (s) => { const t = s.phys.truth(); side = Math.max(side, Math.hypot(t.north - start.north, t.east - start.east)); });
+      c.metric("low: climb time / moved sideways meanwhile / height after", `${climb.toFixed(1)} s / ${side.toFixed(2)} m / ${e.phys.truth().alt.toFixed(2)} m`);
+      c.ok(climb > 0 && side < 1 && Math.abs(e.phys.truth().alt - 5) < 0.3, "from 1.5 m: climbs to the 5 m RTH height before going anywhere");
+      c.ok(e.info().navStage === 2, "then it turns");
+      e.until((s) => s.info().navStage === 3, 10);
+      const facing = (s) => { const i = s.info(); const b = Math.atan2(i.homeE - i.posE, i.homeN - i.posN) * 180 / Math.PI; let err = (i.yaw - i.yawOffset - b) % 360; if (err > 180) err -= 360; if (err < -180) err += 360; return Math.abs(err); };
+      c.metric("nose away from home when the cruise starts", facing(e), "deg");
+      c.ok(facing(e) < 10, "faces home for the cruise");
+      c.ok(e.until((s) => s.info().navStage === 5, 40) > 0, "and gets home");
+
+      e = await airborne();
+      e.goTo(25, 0, 12);
+      e.until((s) => s.info().navKind === 1, 2);
+      e.until((s) => s.info().navKind === 0 && s.info().state === 3, 40);
+      e.command(CODES.RTH);
+      e.until((s) => s.info().navKind === 3, 2);
+      c.ok(e.info().navStage !== 1, "from 12 m: no climb");
+      let lowest = 99;
+      e.until((s) => s.info().navStage >= 4, 40, (s) => { lowest = Math.min(lowest, s.phys.truth().alt); });
+      c.metric("high: lowest on the way home", lowest, "m");
+      c.ok(lowest > 11.5, "stays at 12 m until it is over home");
+      c.ok(e.until((s) => s.info().navStage === 5, 30) > 0 && Math.abs(e.phys.truth().alt - 2) < 0.2, "then comes down to 2 m");
+      c.ok(e.info().reason === 0, "started by command: no failsafe reason");
+    },
+  },
+  {
+    name: "RC-loss detection: silence, too few packets, invalid packets; a reconnect doesn't grab control",
+    async run(c) {
+      // too few packets
+      let e = await airborne();
+      e.opts.pilotRateHz = 3;
+      const slow = e.until((s) => s.info().navKind === 3, 8);
+      c.metric("3 packets a second: starts after", slow, "s");
+      c.ok(slow > 0 && e.info().lostSlow, "too few packets count as a lost link");
+      e.opts.pilotRateHz = 25;
+      c.ok(e.until((s) => !s.info().linkLost, 5) > 0 && e.info().navKind === 3, "the rate comes back: the link is back, and it keeps going home");
+      e.setPilot({ pitch: -0.5 });
+      e.run(0.5);
+      c.ok(e.info().navKind === 0 && e.info().state === 3, "a moved stick takes over");
+      e.setPilot({ pitch: 0 });
+
+      // invalid packets: as if nothing came
+      e = await airborne();
+      e.setPilot({ roll: NaN });
+      const nan = e.until((s) => s.info().navKind === 3, 5);
+      c.metric("packets that aren't numbers: starts after", nan, "s");
+      c.ok(nan > 1.5 && e.info().pilotBad > 10, "invalid packets count as a lost link, after the timeout");
+      e.setPilot({ roll: 0 });
+      c.ok(e.until((s) => !s.info().linkLost, 3) > 0 && e.info().navKind === 3, "good packets again: it keeps going home");
+
+      // silence, then back: flying home carries on until a stick moves
+      e = await airborne();
+      e.goTo(30, 0, 3);
+      e.until((s) => s.info().navKind === 1, 2);
+      e.until((s) => s.info().navKind === 0 && s.info().state === 3, 30);
+      e.rcCut = true;
+      e.until((s) => s.info().navKind === 3, 5);
+      e.run(3);
+      e.rcCut = false;
+      e.run(3);
+      c.ok(!e.info().linkLost && e.info().navKind === 3, "the link comes back with the sticks centred: it keeps going home");
+      e.setPilot({ yaw: 0.2 });
+      e.run(0.5);
+      c.ok(e.info().navKind === 3, "a stick barely moved doesn't take over");
+      e.setPilot({ yaw: 0, roll: 0.5 });
+      e.run(0.5);
+      c.ok(e.info().navKind === 0 && e.info().state === 3, "a stick really moved does");
+      e.setPilot({ roll: 0 });
+
+      // the organisers' keyboard tool only sends on a key press: its silence can't mean a lost link
+      e = await airborne();
+      e.pilotMode = "stock";
+      e.setPilot({ thr: 0 });
+      e.run(10);
+      c.ok(!e.info().linkLost && e.info().state === 3, "their tool quiet for 10 s: not a lost link");
+      e.command(CODES.RTH);
+      c.ok(e.until((s) => s.info().navKind === 3, 2) > 0, "and RTH starts by command with their tool");
+
+      // the stream is gone and a tool sends single commands: they work, and say nothing about the link
+      e = await airborne();
+      e.command(CODES.LAND);
+      e.until((s) => s.info().state === 0, 20);
+      e.rcCut = true;
+      e.until((s) => s.info().linkLost, 5);
+      e.bridge.sendControl(NaN, 0, 0, 0);
+      e.bridge.sendControl(CODES.TAKEOFF, 0, 0, 0);
+      c.ok(e.until((s) => s.info().state === 3, 15) > 0, "stream gone, on the ground: a single take-off command still works");
+      let linkCameBack = false;
+      e.run(6, (s) => { linkCameBack = linkCameBack || !s.info().linkLost; });
+      c.ok(!linkCameBack, "a single command doesn't bring the link back");
+      c.ok(e.info().state === 3 && e.info().navKind === 0, "and it isn't lost a second time, which would send the drone home");
+
+      // the board keeps running from one bridge to the next: a new bridge starts clean
+      c.ok(e.info().pilotBad > 0, "the last bridge left a lost link and a bad packet");
+      e.bridge.sendControl(CODES.LAND, 0, 0, 0);
+      e.until((s) => s.info().state === 0, 20);
+      e.bridge.running = false;
+      e.run(3);
+      e.phys.reset();
+      e.bridge.start();
+      c.ok(e.until((s) => s.info().state === 3, 15) > 0, "a new bridge: takes off by itself");
+      c.ok(!e.info().linkLost && !e.info().streamSeen && e.info().pilotBad === 0, "and the link starts clean");
+      e.bridge.sendControl(CODES.ECO, 0, 0, 0);
+      e.run(5);
+      c.ok(!e.info().linkLost && e.info().state === 3 && e.info().navKind === 0, "a single command then doesn't count as a lost link");
+
+      // RC lost with no way to navigate: it lands where it is
+      e = await airborne();
+      e.phys.env.gpsFreeze = true;
+      e.setPilot({ pitch: -0.3 });
+      e.run(1.5);
+      e.setPilot({ pitch: 0 });
+      e.run(1);
+      e.rcCut = true;
+      c.ok(e.until((s) => s.info().state === 5, 6) > 0 && e.info().reason === 2, "no GPS: RC lost lands on the spot");
+    },
+  },
+  {
+    name: "Return to home: navigation fails on the way, it lands where it is",
+    async run(c) {
+      let e = await airborne();
+      e.goTo(30, 0, 3);
+      e.until((s) => s.info().navKind === 1, 2);
+      e.until((s) => s.info().navKind === 0 && s.info().state === 3, 30);
+      e.command(CODES.RTH);
+      e.until((s) => s.info().navStage === 3, 15);
+      e.run(2);
+      e.phys.env.gpsFreeze = true;
+      const t = e.until((s) => s.info().state === 5, 5);
+      c.metric("GPS frozen during the cruise: gives up after", t, "s");
+      c.ok(t > 0 && e.info().reason === 11, "GPS gone: stops navigating, says why");
+      c.ok(e.until((s) => s.info().state === 0, 40) > 0, "and lands");
+
+      // something stops it: it can't get there, and doesn't keep trying
+      e = await airborne();
+      e.phys.env.wind = [-30, 0, 0];
+      e.goTo(0, 50, 3);
+      e.until((s) => s.info().navKind === 1, 2);
+      const stuck = e.until((s) => s.info().state === 5, 60);
+      c.metric("wind it can't beat: gives up after", stuck, "s");
+      c.ok(stuck > 0 && e.info().reason === 11, "no progress for 5 s: gives up and lands");
+    },
+  },
+  {
+    name: "Hovering at home: someone holding it stops the motors; wind doesn't",
+    async run(c) {
+      const home = async (opts = {}) => {
+        const e = await airborne(opts);
+        e.command(CODES.RTH);
+        e.until((s) => s.info().navKind === 3, 2);
+        e.until((s) => s.info().navStage === 5, 40);
+        e.run(6);
+        return e;
+      };
+      for (const [what, f] of [["pulled down", -6], ["pushed up", 6]]) {
+        const e = await home();
+        c.ok(e.info().state === 6, `${what}: hovering first`);
+        e.phys.env.extForce = [0, 0, f];
+        const t = e.until((s) => s.info().state === 0, 5);
+        c.metric(`${what} with ${Math.abs(f)} N: motors stop after`, t, "s");
+        c.ok(t > 0 && t < 2 && e.info().reason === 12, `${what}: motors stop within 2 s, says held`);
+      }
+      let e = await home({ env: { wind: [8, 0, 0], gust: 2 } });
+      e.run(60);
+      c.ok(e.info().state === 6, "wind 8 m/s with gusts, a whole minute: keeps hovering");
+      e.setPilot({ pitch: 0 });
+      e = await home({ params: { "Hold det": 0 } });
+      e.phys.env.extForce = [0, 0, -3];
+      e.run(5);
+      c.ok(e.info().state === 6, "Hold det off: no stop");
+      e = await airborne();
+      e.goTo(25, 0, 3);
+      e.until((s) => s.info().navKind === 1, 2);
+      e.until((s) => s.info().navStage === 3, 10);
+      e.phys.env.extForce = [0, 0, -6];
+      e.run(4);
+      c.ok(e.info().state === 6, "on the way somewhere: a pull doesn't stop the motors");
+    },
+  },
+  {
+    name: "Go to a marked position: reaches it within 0.2 m, also from the ground; a stick takes over",
+    async run(c) {
+      const rng = new Rng(7);
+      const e = await airborne();
+      const home = e.phys.truth();
+      let worst = 0, worstH = 0, over = 0;
+      for (let i = 0; i < 20; i++) {
+        const a = rng.next() * 2 * Math.PI, r = 5 + 45 * rng.next(), n = r * Math.cos(a), ea = r * Math.sin(a), h = 2 + 8 * rng.next();
+        e.goTo(n, ea, h);
+        e.until((s) => s.info().navKind === 1, 2);
+        const t = e.until((s) => s.info().navKind === 0, 80);
+        c.ok(t > 0 && e.info().state === 3, `target ${i + 1} reached`);
+        e.run(2);
+        const tr = e.phys.truth();
+        worst = Math.max(worst, Math.hypot(tr.north - home.north - n, tr.east - home.east - ea));
+        worstH = Math.max(worstH, Math.abs(tr.alt - h));
+      }
+      c.metric("20 random targets up to 50 m: worst miss / height miss", `${worst.toFixed(3)} m / ${worstH.toFixed(3)} m`);
+      c.ok(worst < 0.2, "every target within 0.2 m");
+      c.ok(worstH < 0.2, "and the right height");
+      // no overshoot on a long trip, and big numbers aren't read as sticks
+      const start = e.phys.truth();
+      e.goTo(start.north - home.north + 40, start.east - home.east, 5);
+      e.until((s) => s.info().navKind === 1, 2);
+      e.until((s) => s.info().navKind === 0, 60, (s) => { over = Math.max(over, s.phys.truth().north - start.north - 40); });
+      c.metric("overshoot on a 40 m trip", over, "m");
+      c.ok(over < 0.5, "doesn't overshoot");
+      // the pilot takes over
+      e.goTo(-20, -20, 4);
+      e.until((s) => s.info().navStage === 3, 15);
+      e.setPilot({ pitch: -0.5 });
+      e.run(0.5);
+      c.ok(e.info().navKind === 0 && e.info().state === 3, "a moved stick takes over");
+      e.setPilot({ pitch: 0 });
+      e.run(3);
+      c.ok(e.info().posState === 4, "and it holds where it stopped");
+      // asked for on the ground
+      const g = await engine({ params: { "Auto TO": 0 } });
+      g.run(8);
+      g.goTo(10, 10, 3);
+      c.ok(g.until((s) => s.info().state === 2, 10) > 0, "on the ground: it takes off first");
+      c.ok(g.until((s) => s.info().navKind === 1, 15) > 0, "then it goes");
+      c.ok(g.until((s) => s.info().navKind === 0 && s.info().state === 3, 30) > 0, "and gets there");
+    },
+  },
+  {
+    name: "Mission: flies the points in order, then returns home; RC lost on the way goes home at once",
+    async run(c) {
+      const points = [[10, 0, 3], [10, 10, 5], [0, 10, 3], [-5, 5, 4]];
+      const e = await airborne();
+      const home = e.phys.truth();
+      points.forEach((p, i) => e.setWaypoint(i, p[0], p[1], p[2]));
+      e.run(0.5);
+      c.ok(e.info().wpCount === 4, "four points stored");
+      e.command(CODES.MISSION_START);
+      c.ok(e.until((s) => s.info().navKind === 2, 2) > 0, "starts");
+      const missed = [];
+      let last = 0;
+      const t = e.until((s) => s.info().navKind !== 2, 120, (s) => {
+        const i = s.info();
+        if (i.wpIndex !== last) {
+          const tr = s.phys.truth(), p = points[last];
+          missed.push(Math.hypot(tr.north - home.north - p[0], tr.east - home.east - p[1]));
+          last = i.wpIndex;
+        }
+      });
+      c.metric("mission time / miss at the points passed", `${t.toFixed(1)} s / ${missed.map((m) => m.toFixed(2)).join(", ")} m`);
+      c.ok(missed.length === 4 && missed.every((m) => m < 0.3), "visits each point in order");
+      c.ok(e.info().navKind === 3, "after the last point it goes home");
+      c.ok(e.until((s) => s.info().navStage === 5, 40) > 0, "and hovers there");
+      const tr = e.phys.truth();
+      c.ok(Math.hypot(tr.north - home.north, tr.east - home.east) < 0.5, "at home");
+
+      const f = await airborne();
+      [[20, 0, 3], [20, 20, 3], [0, 20, 3]].forEach((p, i) => f.setWaypoint(i, p[0], p[1], p[2]));
+      f.command(CODES.MISSION_START);
+      f.until((s) => s.info().navKind === 2, 2);
+      f.until((s) => s.info().wpIndex === 1, 30);
+      f.rcCut = true;
+      c.ok(f.until((s) => s.info().navKind === 3, 5) > 0, "RC lost during a mission: goes home");
+      c.ok(f.until((s) => s.info().navStage === 5, 60) > 0, "and hovers there");
+      const g = await airborne();
+      g.command(CODES.MISSION_START);
+      g.run(1);
+      c.ok(g.info().navKind === 0 && g.info().state === 3, "no points: nothing happens");
+    },
+  },
+  {
+    name: "A stalling simulator: repeated sensor readings don't spoil the estimates",
+    async run(c) {
+      const coast = async (stalls) => {
+        const e = await airborne();
+        e.setPilot({ pitch: -0.6 });
+        e.run(3);
+        e.setPilot({ pitch: 0 });
+        const a = e.phys.truth();
+        let worst = 0, next = 0, moved = 0;
+        for (let t = 0; t < 12; t += 0.02) {
+          if (stalls && t >= next) { e.stall = true; e.run(0.25); e.stall = false; next = t + 0.7; }
+          e.run(0.02);
+          const i = e.info();
+          const v = Math.hypot(e.phys.v[0], e.phys.v[1]);
+          worst = Math.max(worst, Math.abs(v - Math.hypot(i.velN, i.velE)));
+          const tr = e.phys.truth();
+          moved = Math.max(moved, Math.hypot(tr.north - a.north, tr.east - a.east));
+        }
+        return { moved, worst, stale: e.info().imuStale };
+      };
+      const clean = await coast(false), stalled = await coast(true);
+      c.metric("after letting go: distance / worst speed error, no stalls", `${clean.moved.toFixed(2)} m / ${clean.worst.toFixed(2)} m/s`);
+      c.metric("the same, with a 0.25 s stall every 0.7 s", `${stalled.moved.toFixed(2)} m / ${stalled.worst.toFixed(2)} m/s, ${stalled.stale} repeated readings`);
+      c.ok(clean.stale === 0, "no stall: nothing counts as repeated");
+      c.ok(stalled.stale > 20, "the repeats are noticed");
+      c.ok(stalled.worst < 1.0, "the speed estimate stays within 1 m/s");
+      c.ok(stalled.moved < clean.moved + 1.5, "it stops about where it would without stalls");
+    },
+  },
+  {
+    name: "A stuck IMU stops the motors; a paused simulator doesn't",
+    async run(c) {
+      let e = await airborne();
+      e.phys.env.imuStuck = true;
+      const t = e.until((s) => s.info().state === 0, 5);
+      c.metric("IMU stuck, the world goes on: motors stop after", t, "s");
+      c.ok(t > 1 && t < 3 && e.info().reason === 3, "IMU stuck while the other sensors go on: motors stop, reason sensors");
+      e = await airborne();
+      e.stall = true;
+      e.run(4);
+      e.stall = false;
+      e.run(3);
+      const i = e.info();
+      c.ok(i.state === 3, "the whole simulator paused for 4 s: it carries on afterwards");
+      c.metric("after the pause", `${e.phys.truth().alt.toFixed(2)} m, state ${i.state}`);
+      c.ok(Math.abs(e.phys.truth().alt - 1.5) < 0.3, "at the same height");
+    },
+  },
+  {
+    name: "The GPS jumps 50 m: the drone stays where it is, and still gets home",
+    async run(c) {
+      let e = await airborne();
+      const start = e.phys.truth();
+      let far = 0, tilt = 0;
+      const watch = (s) => {
+        const t = s.phys.truth(), i = s.info();
+        far = Math.max(far, Math.hypot(t.north - start.north, t.east - start.east));
+        tilt = Math.max(tilt, Math.abs(i.roll), Math.abs(i.pitch));
+      };
+      e.phys.env.gpsJump = [50, 0];
+      e.run(0.5, watch);
+      e.phys.env.gpsJump = [0, 0];
+      e.run(3, watch);
+      c.ok(far < 0.3 && e.info().gpsJumps === 0, "half a second of it is simply ignored");
+      e.phys.env.gpsJump = [50, 0];
+      e.run(8, watch);
+      c.metric("the GPS jumps 50 m north: it moves at most", far, "m");
+      c.ok(far < 0.5 && tilt < 10 && e.info().state === 3, "it stays where it is, and stays level");
+      c.ok(e.info().gpsJumps === 1 && e.info().posActive, "the jump is counted, and position hold is still on");
+      e.phys.env.gpsJump = [0, 0];
+      e.run(8, watch);
+      c.metric("... and when it jumps back: at most", far, "m");
+      c.ok(far < 0.5 && e.info().gpsJumps === 2, "the same when it jumps back");
+
+      e = await airborne();
+      const home = [e.info().homeN, e.info().homeE];
+      e.goTo(20, 0, 5);
+      e.until((s) => s.info().navKind === 1, 2);
+      e.until((s) => s.info().navKind === 0, 30);
+      e.command(CODES.RTH);
+      e.until((s) => s.info().navStage === 3, 15);
+      e.run(2);
+      e.phys.env.gpsJump = [50, -30];
+      const t = e.until((s) => s.info().navStage === 5, 40);
+      const tr = e.phys.truth();
+      const d = Math.hypot(tr.north - home[0], tr.east - home[1]);
+      c.metric("the GPS jumps during the flight home: distance from home", d, "m");
+      c.ok(t > 0 && d < 0.5 && e.info().state === 6, "it still gets home");
+    },
+  },
+  {
+    name: "A compass that sticks, or turns wrong and comes right again: no fly-away",
+    async run(c) {
+      let e = await airborne();
+      const home = [e.info().homeN, e.info().homeE];
+      e.goTo(25, 0, 4);
+      e.until((s) => s.info().navKind === 1, 2);
+      e.until((s) => s.info().navKind === 0, 30);
+      e.command(CODES.RTH);
+      e.until((s) => s.info().navStage === 3, 15);
+      e.run(1);
+      e.phys.env.magStuck = true;
+      let top = 0;
+      const speed = (s) => { const i = s.info(); top = Math.max(top, Math.hypot(i.velN, i.velE)); };
+      e.run(3, speed);
+      c.ok(e.info().magStuck && !e.info().magHealthy, "a stuck compass is noticed and not used");
+      const t = e.until((s) => { speed(s); return s.info().navStage === 5; }, 40);
+      let tr = e.phys.truth();
+      c.metric("stuck compass, the flight home: distance from home / top speed", `${Math.hypot(tr.north - home[0], tr.east - home[1]).toFixed(2)} m / ${top.toFixed(1)} m/s`);
+      c.ok(t > 0 && Math.hypot(tr.north - home[0], tr.east - home[1]) < 0.5 && top < 5, "it still gets home, at the normal speed");
+      const headingErr = wrap180(e.info().yaw - e.info().yawOffset - tr.yaw);
+      c.metric("stuck compass: the heading it navigates by is off by", headingErr, "deg");
+      c.ok(Math.abs(headingErr) < 30, "the heading it navigates by stays close to the true one");
+      e.phys.env.magStuck = false;
+      e.run(5);
+      c.ok(!e.info().magStuck && e.info().magHealthy, "the compass comes back: it is used again");
+      e.command(CODES.NAV_CANCEL);
+      e.run(1);
+      top = 0;
+      e.goTo(10, 0, 4);
+      e.until((s) => s.info().navKind === 1, 2);
+      e.until((s) => { speed(s); return s.info().navKind === 0; }, 30);
+      tr = e.phys.truth();
+      c.metric("the next trip: miss / top speed", `${Math.hypot(tr.north - home[0] - 10, tr.east - home[1]).toFixed(2)} m / ${top.toFixed(1)} m/s`);
+      c.ok(Math.hypot(tr.north - home[0] - 10, tr.east - home[1]) < 0.5 && top < 5, "the next trip goes where it is told");
+
+      // reads like a compass, but turns further and further wrong for 18 s, then comes right all at once
+      e = await airborne();
+      e.goTo(40, 0, 4);
+      e.until((s) => s.info().navKind === 1, 2);
+      e.until((s) => s.info().navStage === 3, 10);
+      top = 0;
+      for (let a = 0; a < 90; a += 2.5) {
+        e.phys.env.magError = a;
+        e.run(0.5, speed);
+      }
+      e.phys.env.magError = 0;
+      e.run(20, speed);
+      c.metric("a compass turning wrong and back: top speed", top, "m/s");
+      c.ok(top < 8, "never gets away");
+      const after = e.info();
+      c.metric("after that: state / reason / compass used / heading offset", `${after.state} / ${after.reason} / ${after.magHealthy} / ${after.yawOffset.toFixed(0)} deg`);
+      c.ok(after.state === 0 && after.reason === 11, "it can't tell where it is heading: it lands, and says why");
+      e.run(4);
+      c.ok(e.info().magHealthy, "on the ground it takes the compass's word again");
+      c.ok(Math.abs(e.info().yawOffset) < 1, "and what it learned while the compass was wrong is gone");
+      top = 0;
+      e.goTo(10, 0, 4);
+      e.until((s) => s.info().navKind === 1, 15);
+      const home2b = [e.info().homeN, e.info().homeE];
+      e.until((s) => { speed(s); return s.info().navKind === 0; }, 40);
+      tr = e.phys.truth();
+      c.metric("the next flight: miss / top speed", `${Math.hypot(tr.north - home2b[0] - 10, tr.east - home2b[1]).toFixed(2)} m / ${top.toFixed(1)} m/s`);
+      c.ok(Math.hypot(tr.north - home2b[0] - 10, tr.east - home2b[1]) < 0.5 && top < 5, "the next flight goes where it is told");
+
+      // what a bad flight leaves behind must not stay
+      e = await airborne();
+      e.goTo(20, 0, 3);
+      e.until((s) => s.info().navKind === 1, 2);
+      e.until((s) => s.info().navStage === 3, 10);
+      e.run(2);
+      e.phys.env.gpsFreeze = true;
+      e.until((s) => s.info().state === 0, 30);
+      e.phys.env.gpsFreeze = false;
+      e.run(6);
+      const rest = e.info(), restTrue = e.phys.truth();
+      c.metric("after landing with a dead GPS: position estimate off by", Math.hypot(rest.posN - restTrue.north, rest.posE - restTrue.east), "m");
+      c.ok(Math.hypot(rest.posN - restTrue.north, rest.posE - restTrue.east) < 0.5 && Math.hypot(rest.velN, rest.velE) < 0.2, "on the ground the position estimate comes back to the GPS");
+
+      // gyro drift that has just gone away, then a hover: the attitude estimate must not creep off
+      e = await airborne();
+      e.goTo(20, 0, 3);
+      e.until((s) => s.info().navKind === 1, 2);
+      e.until((s) => s.info().navKind === 0, 30);
+      e.phys.env.gyroBias = [0.05, 0, 0];
+      e.run(15);
+      e.phys.env.gyroBias = [0, 0, 0];
+      e.run(25);
+      const hover = e.info(), hoverTrue = e.phys.truth();
+      c.metric("gyro drift gone again, 25 s of hover: roll estimate off by", hover.roll - hoverTrue.roll, "deg");
+      c.ok(Math.abs(hover.roll - hoverTrue.roll) < 2, "the attitude estimate stays right");
+
+      // a heading wrong by 120 deg from the start: it finds out on the first push, instead of flying away
+      e = await airborne({ env: { magError: 120 } });
+      const home3 = [e.info().homeN, e.info().homeE];
+      top = 0;
+      e.goTo(20, 0, 4);
+      e.until((s) => s.info().navKind === 1, 2);
+      e.until((s) => { speed(s); return s.info().navKind === 0 || s.info().state === 0; }, 60);
+      tr = e.phys.truth();
+      c.metric("compass wrong by 120 deg, a trip: miss / top speed", `${Math.hypot(tr.north - home3[0] - 20, tr.east - home3[1]).toFixed(2)} m / ${top.toFixed(1)} m/s`);
+      c.ok(Math.hypot(tr.north - home3[0] - 20, tr.east - home3[1]) < 0.5 && top < 8, "compass wrong by 120 deg: it finds out and still arrives");
+    },
+  },
+  {
+    name: "Telemetry and the OLED show what the drone is doing by itself",
+    async run(c) {
+      const e = await airborne();
+      let s = null;
+      e.bridge.onStatus = (v) => { s = v; };
+      e.goTo(12, 5, 4);
+      e.until((x) => x.info().navStage === 3, 10);
+      e.run(1);
+      c.ok(s && s.stateName === "AUTO" && s.navKindName === "GO TO" && s.navStageName === "CRUISE", "telemetry: AUTO, GO TO, CRUISE");
+      c.ok(Math.abs(s.targetN - (e.info().homeN + 12)) < 0.2 && Math.abs(s.targetE - (e.info().homeE + 5)) < 0.2, "the target, from the take-off point");
+      c.ok(s.posStateName === "NAV" && s.navDist > 0, "position state and distance left");
+      e.until((x) => x.info().navKind === 0, 30);
+      // the menu item: SELECT opens the menu and the Flight page, DOWN three times to Return home
+      const now = () => e.nowUs();
+      e.fc.button(2, 1, now());
+      e.run(0.1);
+      e.fc.button(2, 1, now());
+      e.run(0.1);
+      for (let i = 0; i < 3; i++) { e.fc.button(1, 1, now()); e.run(0.1); }
+      c.ok(e.info().navKind === 0, "only moving through the menu changes nothing");
+      e.fc.button(2, 1, now());
+      c.ok(e.until((x) => x.info().navKind === 3, 2) > 0, "Menu > Flight > Return home starts it");
+      c.ok(e.fc.get("RC lost") === 3, "RC lost is RTH by default");
+      c.ok(e.fc.helpTexts().some((h) => h.title === "Return home"), "it has a help topic");
+      const n = e.fc.x.fc_settings_pack();
+      e.fc.set("RTH hover", 7);
+      c.ok(n > 0 && e.fc.x.fc_settings_unpack(n) === 1 && e.fc.get("RTH hover") === 2, "its settings are saved with the others");
+    },
+  },
+  {
+    name: "Gestures: only a clear gesture held on purpose is a command, and none can stop the motors",
+    async run(c) {
+      const hold = (gate, name, score, from, to) => { const out = []; for (let t = from; t <= to + 1e-9; t += 0.1) { const r = gate.update(name, score, t); if (r !== null) out.push(r); } return out; };
+      let g = new GestureGate();
+      c.ok(hold(g, "Thumb_Up", 0.9, 0, 0.8).length === 0, "held for 0.8 s: nothing yet");
+      g = new GestureGate();
+      let got = hold(g, "Thumb_Up", 0.9, 0, 3);
+      c.ok(got.length === 1 && got[0] === CODES.TAKEOFF, "thumb up held: take-off, once, however long it is held");
+      g = new GestureGate();
+      c.ok(hold(g, "Thumb_Down", 0.9, 0, 2)[0] === CODES.LAND, "thumb down: land");
+      g = new GestureGate();
+      c.ok(hold(g, "Victory", 0.9, 0, 2)[0] === CODES.RTH, "victory: return home");
+      g = new GestureGate();
+      c.ok(hold(g, "Open_Palm", 0.9, 0, 2)[0] === CODES.NAV_CANCEL, "open palm: stop the trip");
+      g = new GestureGate();
+      c.ok(hold(g, "Thumb_Up", 0.4, 0, 3).length === 0, "not sure enough: nothing");
+      g = new GestureGate();
+      c.ok(hold(g, "Closed_Fist", 0.9, 0, 3).length === 0 && hold(g, "None", 0.9, 3, 6).length === 0, "gestures without a job: nothing");
+      g = new GestureGate();
+      hold(g, "Thumb_Up", 0.9, 0, 0.6);
+      got = hold(g, "Thumb_Down", 0.9, 0.7, 1.3);
+      c.ok(got.length === 0, "changing gesture starts the count again");
+      g = new GestureGate();
+      hold(g, "Thumb_Up", 0.9, 0, 2);
+      hold(g, "", 0, 2.1, 3);
+      c.ok(hold(g, "Thumb_Up", 0.9, 3.1, 5).length === 1, "let go and shown again: it works again");
+      g = new GestureGate();
+      hold(g, "Thumb_Up", 0.9, 0, 0.5);
+      hold(g, "", 0, 0.6, 0.8);
+      c.ok(hold(g, "Thumb_Up", 0.9, 0.9, 1.1).length === 1, "a flicker in the recognition doesn't start the hold again");
+      c.ok(!Object.values(GESTURE_ACTIONS).some((a) => a.code === CODES.KILL || a.code === CODES.DISARM), "no gesture stops the motors");
+      const cams = [{ kind: "videoinput", label: "HP Wide Vision HD Camera", deviceId: "hp" }, { kind: "videoinput", label: "Logitech Webcam C270", deviceId: "c270" }, { kind: "audioinput", label: "mic", deviceId: "m" }];
+      c.ok(chooseCamera(cams, "own").deviceId === "hp" && chooseCamera(cams, "c270").deviceId === "c270", "gestures use the laptop's camera, objects the C270");
+      c.ok(chooseCamera([cams[0]], "c270").deviceId === "hp" && chooseCamera([cams[1]], "own").deviceId === "c270", "with one camera, both use it");
+      c.ok(chooseCamera([], "own") === null, "no camera: says so instead of failing later");
+    },
+  },
+  {
+    name: "Landing on a marker: lines up, comes down, lands on it; marker lost or never seen",
+    async run(c) {
+      const PAD = { north: 4, east: 6 };
+      // a stand-in for tools/vision/marker_tracker.py: 10 times a second, while the pad is in view and the camera is on
+      const camera = (e, state) => {
+        let next = 0;
+        e.stepHooks.push((s) => {
+          if (s.t < next) return;
+          next = s.t + 0.1;
+          const tr = s.phys.truth(), i = s.info();
+          const dn = PAD.north - (tr.north - state.home.north), de = PAD.east - (tr.east - state.home.east);
+          const view = Math.max(tr.alt, 0.2) * 0.5;      // about what the real camera's 60 degree view covers
+          if (state.on && Math.hypot(dn, de) < view + 1 && tr.alt > 0.9) s.pilotCodes.push([CODES.VISION, dn, de, 1]);
+          state.seen = i.markerSeen;
+        });
+      };
+      for (const [n, ea, h] of [[1, 1, 5], [-1.5, 0.5, 6], [0.5, -0.6, 3]]) {
+        const e = await airborne();
+        const st = { on: true, home: e.phys.truth() };
+        camera(e, st);
+        e.goTo(PAD.north + n, PAD.east + ea, h);
+        e.until((s) => s.info().navKind === 1, 2);
+        e.until((s) => s.info().navKind === 0 && s.info().state === 3, 40);
+        e.run(1);
+        c.ok(e.info().markerSeen, `${n}, ${ea}, ${h} m: the marker is in view`);
+        e.command(CODES.MARKER_LAND);
+        c.ok(e.until((s) => s.info().navKind === 4, 2) > 0, "starts");
+        c.ok(e.until((s) => s.info().navStage === 7, 30) > 0, "lines up, then starts down");
+        let peak = 0;
+        const t = e.until((s) => s.info().state === 0, 60, (s) => { peak = Math.max(peak, s.info().tilt); });
+        e.run(0.5);
+        const tr = e.phys.truth();
+        const miss = Math.hypot(tr.north - st.home.north - PAD.north, tr.east - st.home.east - PAD.east);
+        c.metric(`from ${n}, ${ea} at ${h} m`, `${miss.toFixed(3)} m from the centre, ${t.toFixed(1)} s, tilt ${peak.toFixed(1)} deg`);
+        c.ok(t > 0 && miss < 0.25 && e.info().reason === 9, `${n}, ${ea}, ${h} m: lands on the pad, motors stop`);
+      }
+      // marker lost half way down
+      let e = await airborne();
+      let st = { on: true, home: e.phys.truth() };
+      camera(e, st);
+      e.goTo(PAD.north, PAD.east, 6);
+      e.until((s) => s.info().navKind === 1, 2);
+      e.until((s) => s.info().navKind === 0 && s.info().state === 3, 40);
+      e.run(1);
+      e.command(CODES.MARKER_LAND);
+      e.until((s) => s.info().navStage === 7, 30);
+      e.until((s) => s.phys.truth().alt < 4.5, 15);
+      st.on = false;
+      const h0 = e.phys.truth().alt;
+      const gave = e.until((s) => s.info().state === 4, 8);
+      c.metric("marker lost: gives up after / height moved meanwhile", `${gave.toFixed(1)} s / ${Math.abs(e.phys.truth().alt - h0).toFixed(2)} m`);
+      c.ok(gave > 2.5 && gave < 4 && Math.abs(e.phys.truth().alt - h0) < 0.5, "marker lost: holds its height, then lands normally");
+      c.ok(e.until((s) => s.info().state === 0, 30) > 0 && e.info().reason === 9, "and lands");
+      // never seen
+      e = await airborne();
+      e.command(CODES.MARKER_LAND);
+      e.run(2);
+      c.ok(e.info().navKind === 0 && e.info().state === 3, "no marker in view: the command is refused");
+      // the pilot takes over
+      e = await airborne();
+      st = { on: true, home: e.phys.truth() };
+      camera(e, st);
+      e.goTo(PAD.north, PAD.east, 4);
+      e.until((s) => s.info().navKind === 1, 2);
+      e.until((s) => s.info().navKind === 0 && s.info().state === 3, 40);
+      e.run(1);
+      e.command(CODES.MARKER_LAND);
+      e.until((s) => s.info().navStage === 7, 30);
+      e.setPilot({ roll: 0.5 });
+      e.run(0.5);
+      c.ok(e.info().navKind === 0 && e.info().state === 3, "a moved stick takes over");
+    },
+  },
+  {
+    name: "Laptop cameras: the real models load and work on real pictures",
+    async run(c) {
+      // hidden Edge can't run MediaPipe: tools/run_tests_headless.bat skips this, and simulator/tests.html?only=Laptop runs it
+      if (new URLSearchParams(location.search).has("nocamera")) { c.ok(true, "skipped in hidden Edge: open tests.html?only=Laptop in a normal window"); return; }
+      const here = await fetch("vendor/mediapipe/vision_bundle.mjs", { method: "HEAD" }).then((r) => r.ok, () => false);
+      if (!here) { c.ok(true, "skipped: the camera files aren't here (python tools/get_camera_files.py)"); return; }
+      const { imageGesture, imageObjects } = await import("./vision.js");
+      const load = (f) => new Promise((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => bad(new Error("no picture " + f)); i.src = "vendor/testdata/" + f; });
+      let hands = 0, commands = 0;
+      const shown = [];
+      for (const f of ["hand_four_0.jpg", "hand_four_1.jpg", "hand_rock_0.jpg", "hand_rock_1.jpg", "hand_call_0.jpg", "hand_call_1.jpg"]) {
+        const g = await imageGesture(await load(f));
+        shown.push(`${f.replace("hand_", "").replace(".jpg", "")}: ${g.name || "no hand"}${g.name ? " " + g.score.toFixed(2) : ""}`);
+        if (g.name) hands++;
+        if (GESTURE_ACTIONS[g.name] && g.score >= 0.6) commands++;
+      }
+      c.metric("gesture model on hands that aren't commands", shown.join(", "));
+      c.ok(hands >= 4, "it finds the hand in most of the photos");
+      c.ok(commands === 0, "and none of these other hand shapes passes as a command");
+      const objs = await imageObjects(await load("basketball1.png"));
+      c.metric("object model on a basketball player", objs.map((o) => `${o.name} ${o.score.toFixed(2)}`).join(", ") || "nothing");
+      c.ok(objs.some((o) => o.name === "person"), "the object model finds the person");
+    },
+  },
+  {
+    name: "The map: clicks become metres from the take-off point; the fault panel says what is wrong",
+    async run(c) {
+      const close = (a, b) => Math.abs(a - b) < 1e-9;
+      let p = mapToMetres(150, 150, 300, 20);
+      c.ok(close(p.north, 0) && close(p.east, 0), "the centre is the take-off point");
+      p = mapToMetres(150, 0, 300, 20);
+      c.ok(close(p.north, 20) && close(p.east, 0), "the top is north");
+      p = mapToMetres(300, 150, 300, 20);
+      c.ok(close(p.north, 0) && close(p.east, 20), "the right is east");
+      const q = metresToMap(7, -3, 300, 50), back = mapToMetres(q.x, q.y, 300, 50);
+      c.ok(close(back.north, 7) && close(back.east, -3), "there and back give the same point");
+      c.ok(mapRange([]) === 20, "the map starts at 20 m");
+      c.ok(mapRange([{ north: 40, east: 30 }]) >= 50 && mapRange([{ north: 40, east: 30 }]) <= 60, "it grows to show everything");
+      c.ok(navText({ navKind: 0, armed: false }) === "on the ground" && navText({ navKind: 0, armed: true }) === "pilot is flying", "says when nothing is going on");
+      c.ok(navText({ navKind: 3, navKindName: "RTH", navStage: 3, navStageName: "CRUISE", navDist: 12.34, wpIndex: 0 }) === "RTH: CRUISE, 12.3 m to go", "says where it is going");
+      c.ok(navText({ navKind: 2, navKindName: "MISSION", navStage: 3, navStageName: "CRUISE", navDist: 1, wpIndex: 2 }).startsWith("MISSION point 3"), "and which point");
+      const base = { sensorsOk: true, linkLost: false, pilotHz: 25, compass: true, posReady: true, failsafe: false, crashed: false, crcErrors: 0, stateName: "FLYING", reasonName: "-", navKind: 0, imuStale: 0, imuTimeBad: 0, pilotBad: 0 };
+      const bad = (o, age = 0) => faultList({ ...base, ...o }, age).filter((r) => r.bad).map((r) => r.name);
+      c.ok(bad({}).length === 0, "all well: nothing red");
+      c.ok(bad({ linkLost: true }).join() === "RC link", "lost link");
+      c.ok(bad({ sensorsOk: false }).join() === "Sensors", "no sensors");
+      c.ok(bad({ posReady: false }).join() === "GPS and position", "no GPS");
+      c.ok(bad({ compass: false }).join() === "Compass", "no compass");
+      c.ok(bad({ failsafe: true, stateName: "FAILSAFE", reasonName: "no navigation" }).join() === "Failsafe", "failsafe");
+      c.ok(bad({ crashed: true }).join() === "Crash", "crash");
+      c.ok(bad({}, 5).join() === "Telemetry", "telemetry stopped");
+      c.ok(faultList(null, 0).length === 0, "not connected: an empty panel");
     },
   },
 ];

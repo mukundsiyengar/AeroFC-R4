@@ -11,10 +11,12 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 ROOT="$(cd .. && pwd)"
 GUI=""
+CAMERA=""
 SITL_ARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --gui) GUI="--gui" ;;
+    --camera) CAMERA=1 ;;
     --) shift; SITL_ARGS=("$@"); break ;;
   esac
   shift
@@ -24,12 +26,18 @@ done
 "$ROOT/stop_hil.sh" >/dev/null 2>&1 || true
 pkill -f "aerofc_sitl" 2>/dev/null || true
 cleanup() {
+  pkill -f "marker_tracker.py" 2>/dev/null || true
   pkill -f "aerofc_sitl" 2>/dev/null || true
   pkill -f "bridge_plus.py" 2>/dev/null || true
   "$ROOT/stop_hil.sh" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT INT TERM
 
+# --camera: the world with the down camera and the landing pad, and the program that looks for the pad
+if [[ -n "$CAMERA" ]]; then
+  export AEROFC_WORLD="$ROOT/gz_betaflight_bridge/worlds/quadcopter_cam.sdf"
+  (sleep 8; exec python3 -u "$HOME/hil_test_r4/arduino_hil/marker_tracker.py") &
+fi
 "$ROOT/start_serial.sh" -b
 "$ROOT/start_gazebo.sh" $GUI -b
 echo "== starting the AeroFC firmware (SITL) on fc_fake"

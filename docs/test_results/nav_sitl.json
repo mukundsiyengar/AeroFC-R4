@@ -1,0 +1,84 @@
+{
+ "date": "2026-11-05 22:53",
+ "imuStale": 0,
+ "imuTimeBad": 0,
+ "results": {
+  "their tool: --throttle 23 goes to 10 m north, 5 m east, 3 m up": {
+   "pass": true,
+   "detail": "missed by 0.080 m, height 3.00 m"
+  },
+  "their tool: --throttle 22 returns home and hovers at 2 m": {
+   "pass": true,
+   "detail": "0.048 m from home, 0.044 m from 2 m"
+  },
+  "their tool: its silence doesn't count as a lost link": {
+   "pass": true,
+   "detail": false
+  },
+  "RC lost from 8 directions, 30 m away: home within 0.5 m, 2 m within 0.1 m": {
+   "pass": true,
+   "detail": "worst 0.040 m from home, 0.041 m from 2 m, lost after at most 2.05 s, slowest trip 21.5 s "
+  },
+  "low: climbs to 5 m before moving": {
+   "pass": true,
+   "detail": "moved 0.13 m sideways, height 4.80 m after the climb"
+  },
+  "high: stays at its height until it is over home": {
+   "pass": true,
+   "detail": "lowest 11.98 m on the way"
+  },
+  "then comes down to 2 m over home": {
+   "pass": true,
+   "detail": "0.010 m from home, 0.061 m from 2 m"
+  },
+  "3 packets a second count as a lost link": {
+   "pass": true,
+   "detail": "RTH after 2.7 s"
+  },
+  "the rate comes back: it keeps going home": {
+   "pass": true,
+   "detail": "RTH"
+  },
+  "packets that aren't numbers count as a lost link": {
+   "pass": true,
+   "detail": "RTH after 2.0 s, 48 bad packets"
+  },
+  "a single command doesn't bring a lost link back": {
+   "pass": true,
+   "detail": "link came back: False, RTH"
+  },
+  "35 s at home with nobody holding it: keeps hovering": {
+   "pass": true,
+   "detail": "AUTO"
+  },
+  "pulled down with 6 N: motors stop within 2 s": {
+   "pass": true,
+   "detail": "1.25 s, reason held"
+  },
+  "pushed up with 6 N: motors stop within 2 s": {
+   "pass": true,
+   "detail": "1.23 s, reason held"
+  },
+  "20 random targets up to 50 m away: within 0.2 m of each": {
+   "pass": true,
+   "detail": "worst 0.094 m, height 0.029 m"
+  },
+  "mission: visits the four points in order": {
+   "pass": true,
+   "detail": [
+    0.03,
+    0.091,
+    0.12,
+    0.091
+   ]
+  },
+  "mission: then goes home by itself": {
+   "pass": true,
+   "detail": "RTH"
+  },
+  "mission: ends hovering at home": {
+   "pass": true,
+   "detail": "0.059 m from home, 0.043 m from 2 m"
+  }
+ }
+}

@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 650" role="img" aria-label="The flight states and what moves between them">
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#5b6776"/></marker><marker id="b" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M10 0 L0 5 L10 10 z" fill="#5b6776"/></marker></defs>
+<rect width="1180" height="650" rx="14" fill="#ffffff"/>
+<text x="590" y="34" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="19" fill="#1f2a37" text-anchor="middle" font-weight="600">Flight states: every path out of flight ends with the motors stopped</text>
+<rect x="40" y="90" width="210" height="84" rx="12" fill="#e8f1fb" stroke="#1f6fd6" stroke-width="2"/>
+<text x="145.0" y="126" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="17" fill="#1f2a37" text-anchor="middle" font-weight="600">DISARMED</text>
+<text x="145.0" y="150" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5b6776" text-anchor="middle">motors off</text>
+<rect x="330" y="90" width="210" height="84" rx="12" fill="#ffffff" stroke="#c4cad3" stroke-width="2"/>
+<text x="435.0" y="126" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="17" fill="#1f2a37" text-anchor="middle" font-weight="600">IDLE</text>
+<text x="435.0" y="150" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5b6776" text-anchor="middle">motors at idle</text>
+<rect x="620" y="90" width="210" height="84" rx="12" fill="#ffffff" stroke="#c4cad3" stroke-width="2"/>
+<text x="725.0" y="126" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="17" fill="#1f2a37" text-anchor="middle" font-weight="600">TAKEOFF</text>
+<text x="725.0" y="150" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5b6776" text-anchor="middle">climbs to 1.5 m</text>
+<rect x="910" y="90" width="210" height="84" rx="12" fill="#ffffff" stroke="#c4cad3" stroke-width="2"/>
+<text x="1015.0" y="126" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="17" fill="#1f2a37" text-anchor="middle" font-weight="600">FLYING</text>
+<text x="1015.0" y="150" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5b6776" text-anchor="middle">height hold or manual</text>
+<rect x="620" y="270" width="210" height="84" rx="12" fill="#ffffff" stroke="#c4cad3" stroke-width="2"/>
+<text x="725.0" y="306" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="17" fill="#1f2a37" text-anchor="middle" font-weight="600">LANDING</text>
+<text x="725.0" y="330" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5b6776" text-anchor="middle">comes down gently</text>
+<rect x="910" y="270" width="210" height="84" rx="12" fill="#eef8f1" stroke="#3a9d5d" stroke-width="2"/>
+<text x="1015.0" y="306" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="17" fill="#1f2a37" text-anchor="middle" font-weight="600">AUTO</text>
+<text x="1015.0" y="330" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5b6776" text-anchor="middle">return home, trips, missions</text>
+<rect x="620" y="430" width="210" height="84" rx="12" fill="#ffffff" stroke="#c4cad3" stroke-width="2"/>
+<text x="725.0" y="466" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="17" fill="#1f2a37" text-anchor="middle" font-weight="600">FAILSAFE</text>
+<text x="725.0" y="490" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5b6776" text-anchor="middle">lands on the spot</text>
+<line x1="250" y1="132" x2="330" y2="132" stroke="#5b6776" stroke-width="2" marker-end="url(#a)"/>
+<text x="290" y="120" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5b6776" text-anchor="middle">arm</text>
+<line x1="540" y1="132" x2="620" y2="132" stroke="#5b6776" stroke-width="2" marker-end="url(#a)"/>
+<text x="580" y="120" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5b6776" text-anchor="middle">take off</text>
+<line x1="830" y1="132" x2="910" y2="132" stroke="#5b6776" stroke-width="2" marker-end="url(#a)"/>
+<text x="870" y="120" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5b6776" text-anchor="middle">at height</text>
+<path d="M435 174 L435 214 L215 214 L215 174" fill="none" stroke="#5b6776" stroke-width="2" marker-end="url(#a)"/>
+<text x="325" y="206" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5b6776" text-anchor="middle">15 s with no take-off</text>
+<line x1="1000" y1="174" x2="1000" y2="270" stroke="#5b6776" stroke-width="2" marker-end="url(#a)"/>
+<text x="992" y="218" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5b6776" text-anchor="end">H, go-to, mission,</text>
+<text x="992" y="236" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5b6776" text-anchor="end">lost RC link</text>
+<line x1="1060" y1="270" x2="1060" y2="174" stroke="#5b6776" stroke-width="2" marker-end="url(#a)"/>
+<text x="1068" y="218" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5b6776" text-anchor="start">stick moved,</text>
+<text x="1068" y="236" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5b6776" text-anchor="start">or arrived</text>
+<path d="M930 174 L930 196 L725 196 L725 270" fill="none" stroke="#5b6776" stroke-width="2" marker-end="url(#a)"/>
+<text x="830" y="188" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5b6776" text-anchor="middle">land command</text>
+<line x1="910" y1="312" x2="830" y2="312" stroke="#5b6776" stroke-width="2" marker-end="url(#a)"/>
+<text x="870" y="300" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5b6776" text-anchor="middle">land, or low</text>
+<text x="870" y="330" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5b6776" text-anchor="middle">over a marker</text>
+<path d="M960 354 L960 472 L830 472" fill="none" stroke="#5b6776" stroke-width="2" marker-end="url(#a)"/>
+<text x="950" y="396" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5b6776" text-anchor="end">GPS or compass gone,</text>
+<text x="950" y="414" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5b6776" text-anchor="end">or not getting closer</text>
+<path d="M620 312 L180 312 L180 174" fill="none" stroke="#5b6776" stroke-width="2" marker-end="url(#a)"/>
+<path d="M620 472 L180 472 L180 312" fill="none" stroke="#5b6776" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="180" cy="312" r="4" fill="#5b6776"/>
+<text x="400" y="304" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5b6776" text-anchor="middle">touch-down: motors stop</text>
+<text x="400" y="464" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5b6776" text-anchor="middle">touch-down: motors stop</text>
+<path d="M1090 354 L1090 548 L120 548 L120 174" fill="none" stroke="#5b6776" stroke-width="2" marker-end="url(#a)"/>
+<text x="620" y="540" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5b6776" text-anchor="middle">someone holds it at home: motors stop (simulation only)</text>
+<rect x="40" y="590" width="1100" height="44" rx="10" fill="#eceef0" stroke="#c4cad3" stroke-width="1.5"/>
+<text x="590" y="618" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" fill="#1f2a37" text-anchor="middle" font-weight="600">From any state: KILL, crash, sensors lost or STOP go straight to DISARMED</text>
+</svg>

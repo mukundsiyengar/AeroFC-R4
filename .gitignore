@@ -15,3 +15,10 @@ hil_flight_*.csv
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# the laptop cameras' big files: tools/get_camera_files.py downloads them
+simulator/vendor/mediapipe/
+simulator/vendor/models/
+
+# dated results of your own test runs (docs/test_results keeps the undated ones)
+docs/test_results/*_20[0-9][0-9]-*

@@ -1,0 +1,93 @@
+{
+ "date": "2026-11-05 23:52",
+ "results": {
+  "damaged bytes on the line for 8 s: thrown away, flight not disturbed": {
+   "pass": true,
+   "detail": "moved at most 0.008 m, 0 packets failed their check, state FLYING"
+  },
+  "barometer frozen for 15 s while hovering: holds its height": {
+   "pass": true,
+   "detail": "moved at most 0.10 m"
+  },
+  "gyro drift 3 deg/s switched on in flight: recovers": {
+   "pass": true,
+   "detail": "moved at most 0.92 m, state FLYING"
+  },
+  "RC lost during CLIMB: it carries on home": {
+   "pass": true,
+   "detail": "0.024 m from home, height 2.01 m"
+  },
+  "RC lost during TURN: it carries on home": {
+   "pass": true,
+   "detail": "0.021 m from home, height 2.01 m"
+  },
+  "RC lost during CRUISE: it carries on home": {
+   "pass": true,
+   "detail": "0.017 m from home, height 2.01 m"
+  },
+  "RC lost during DESCEND: it carries on home": {
+   "pass": true,
+   "detail": "0.022 m from home, height 2.01 m"
+  },
+  "RC lost during HOVER: it carries on home": {
+   "pass": true,
+   "detail": "0.011 m from home, height 2.01 m"
+  },
+  "GPS frozen during the cruise: stops navigating, says why": {
+   "pass": true,
+   "detail": "after 0.46 s, reason no navigation"
+  },
+  "and lands where it is, upright": {
+   "pass": true,
+   "detail": "12.9 m from where it happened, reason no navigation"
+  },
+  "GPS jumps 50 m: the drone stays where it is": {
+   "pass": true,
+   "detail": "moved at most 0.06 m, tilt 0.8 deg, state FLYING, 1 jump seen"
+  },
+  "GPS jumps back: it still stays where it is": {
+   "pass": true,
+   "detail": "moved at most 0.06 m, tilt 0.8 deg, 2 jumps seen"
+  },
+  "GPS jumps 50 m on the way home: it still gets there": {
+   "pass": true,
+   "detail": "0.238 m from home, state AUTO, height 2.02 m"
+  },
+  "and stays there when the GPS jumps back": {
+   "pass": true,
+   "detail": "0.251 m from home, state AUTO"
+  },
+  "compass fault mag_freeze on the way home: gets home, or lands and says why": {
+   "pass": true,
+   "detail": "23.6 m from home when it happened, at most 23.6 m, 0.21 m at the end, top speed 3.0 m/s, state AUTO, reason -, compass used False"
+  },
+  "after compass fault mag_freeze: the next trip goes where it is told": {
+   "pass": true,
+   "detail": "0.32 m off, top speed 3.1 m/s, state FLYING, reason -"
+  },
+  "compass fault mag_zero on the way home: gets home, or lands and says why": {
+   "pass": true,
+   "detail": "23.6 m from home when it happened, at most 23.6 m, 0.24 m at the end, top speed 3.1 m/s, state AUTO, reason -, compass used False"
+  },
+  "after compass fault mag_zero: the next trip goes where it is told": {
+   "pass": true,
+   "detail": "0.32 m off, top speed 3.1 m/s, state FLYING, reason -"
+  },
+  "compass turning wrong, then right again: it never gets away": {
+   "pass": true,
+   "detail": "39.8 m from where the 40 m trip started, top speed 3.1 m/s, state FLYING, reason -, heading offset 98 deg"
+  },
+  "after a compass turning wrong: the next trip goes where it is told": {
+   "pass": true,
+   "detail": "0.30 m off, top speed 4.5 m/s, state FLYING, reason -"
+  },
+  "IMU stuck in flight (the world goes on): motors stop, says why": {
+   "pass": true,
+   "detail": "after 1.55 s, reason sensors, height 3.69 m"
+  },
+  "Phase 10: the faults are in the flight log": {
+   "pass": true,
+   "detail": "10379 rows: reasons ['no navigation', 'pilot link', 'sensors'], 1174 rows flying with no compass, 4 GPS jumps, 1401 rows with the RC link lost"
+  }
+ }
+}
